@@ -114,7 +114,7 @@ $(document).ready(function(){
 				}
 
 				var values = presets[fieldId][presetId].values;
-				
+
 				// Only grid visible fields
 				//var gridRows = field.find('tbody tr.grid_row:not(.blank_row):visible');
 				var gridRows = field.find(gridRowsField);
@@ -141,35 +141,103 @@ $(document).ready(function(){
 						
 							var $cell = $(this);
 							var fieldtype = $(this).data('fieldtype');
-							var fieldValue = '';
+							
+					
+							if (fieldtype == 'relationship') {
+								
+								var inputName = $(this).find('input.input-name').attr('name');
+								var manualAdd = false;
+								
+								if (typeof inputName !== "undefined" && typeof value[icol] !== "undefined") {
 
-							$(this).find('input, textarea, select, radio').each(function(ifield) {
-
-								if (typeof value[icol][ifield] !== "undefined") {
-									
-									var fieldValue = value[icol][ifield];
-
-									// find multiselect value (there is a hidden field within this too)
-									if ($(this).is('select[multiple]')) {
-										$(this).val(fieldValue);
+									$.each(value[icol], function(index, fieldValue) {
 										
-									// select option or populate if value not found
-									} else if ($(this).is('select')) {
-										if ($(this).find("option[value='"+fieldValue+"']").length > 0) {
-											$(this).val(fieldValue);
+										var relRow = '';
+										var channelTitle = fieldValue;
+										var entryTitle = 'Entry ';
+										
+										
+										var $field = $cell.find('.relate-wrap:first input[value='+fieldValue+']');
+										
+										if ($field.length) {
+											var $label = $field.closest('label');
+											channelTitle = $label.data('channel-title');
+											entryTitle = $label.data('entry-title');
+											$label.closest('label').addClass('chosen');
+											$field.prop('checked', true);
 										} else {
-											$(this).prepend('<option value="'+value[icol]+'">'+value[icol]+'</option>').val(fieldValue);
+											manualAdd = true;
+										}
+										
+										//var template = $cell.find('.scroll-wrap[data-template]').data('template');
+										//template = template.replace('{entry-id}', fieldValue);
+										//template = template.replace('{entry-title}', entryTitle);
+										//template = template.replace('{channel-title}', channelTitle);
+									
+										if ($cell.hasClass('grid-multi-relate')) {
+											
+											relRow += '<label class="choice block chosen relate-manage" data-entry-id="'+fieldValue+'" data-search="{entry-title-lower}">';
+											relRow += '  <span class="relate-reorder"></span>';
+											relRow += '  <a href="" title="Remove Relationship" data-entry-id="'+fieldValue+'"></a> '+entryTitle+'<i>— '+channelTitle+'</i>';
+											relRow += '  <input type="hidden" name="'+inputName+'" value="'+fieldValue+'">';
+											relRow += '</label>';
+											
+											$cell.find('.relate-wrap:last .scroll-wrap').append(relRow);
+											
+										} else {
+											
+											relRow += '<label class="choice block chosen" data-entry-id="'+fieldValue+'" data-search="{entry-title-lower}">';
+											relRow += '  <input type="radio" name="'+inputName+'" value="'+fieldValue+'" checked="checked">'+entryTitle+'<i>— '+channelTitle+'</i>';
+											relRow += '</label>';
+											
+											$cell.find('.relate-wrap-chosen').append(relRow);
+											
 										}
 
-									// basics
+										
+									});
+
+									if (manualAdd) {
+										$cell.find('.no-results').html('<b>Titles</b> available after saving.');
 									} else {
-										$(this).val(fieldValue);
+										$cell.find('.no-results').addClass('hidden');
 									}
 									
+								
 								}
 								
+							} else {
+							
+				
+								$(this).find('input, textarea, select').each(function(ifield) {
 
-							});
+									if (typeof value[icol][ifield] !== "undefined") {
+										
+										var fieldValue = value[icol][ifield];
+
+										// find multiselect value (there is a hidden field within this too)
+										if ($(this).is('select[multiple]')) {
+											$(this).val(fieldValue);
+											
+										// select option or populate if value not found
+										} else if ($(this).is('select')) {
+											if ($(this).find("option[value='"+fieldValue+"']").length > 0) {
+												$(this).val(fieldValue);
+											} else {
+												$(this).prepend('<option value="'+value[icol]+'">'+value[icol]+'</option>').val(fieldValue);
+											}
+
+										// basics
+										} else {
+											$(this).val(fieldValue);
+										}
+										
+									}
+									
+
+								});
+								
+							}
 							
 							
 							// Fieldtype cleanup and show selected
@@ -222,7 +290,7 @@ $(document).ready(function(){
 			
 			// if no rows exist, do nothing
 			
-var field = gridFields.has('#field_id_'+fieldId);
+			var field = gridFields.has('#field_id_'+fieldId);
 			
 			var gridRows = field.find(gridRowsField); //field.find('tbody tr.grid_row:not(.blank_row):visible');
 
@@ -266,9 +334,17 @@ var field = gridFields.has('#field_id_'+fieldId);
 				fieldRow[irow] = {};
 				$(this).find('> td[data-fieldtype]').each(function(icol) {
 					fieldRow[irow][icol] = {};
-					$(this).find('input, textarea, select, radio').each(function(ifield) {
-						fieldRow[irow][icol][ifield] = $(this).val();
-					});
+					var fieldtype = $(this).data('fieldtype');
+
+					if (fieldtype == 'relationship') {
+						$(this).find('.relate-wrap:last .scroll-wrap .chosen input').each(function(ifield) {
+							fieldRow[irow][icol][ifield] = $(this).val();
+						});
+					} else {
+						$(this).find('input, textarea, select').each(function(ifield) {
+							fieldRow[irow][icol][ifield] = $(this).val();
+						});
+					}
 				});
 				presetValues[fieldId][presetId].values = fieldRow;
 			});
@@ -345,7 +421,7 @@ var field = gridFields.has('#field_id_'+fieldId);
 			var presetSelect = $('#hold_field_'+fieldId+'.publish_grid .grid-presets select.grid-preset-select');
 		}*/
 		
-var presetSelect = gridFields.has('#field_id_'+fieldId).find('.grid-presets select.grid-preset-select');
+		var presetSelect = gridFields.has('#field_id_'+fieldId).find('.grid-presets select.grid-preset-select');
 
 		presetSelect.find('option:not(:first)').remove();
 		
