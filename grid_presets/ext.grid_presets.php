@@ -121,7 +121,14 @@ class Grid_presets_ext {
 			$vars['base'] = ee('CP/URL')->make('cp/addons/settings/grid_presets', array(), '', '') . '/'; 
 		}
 		
-		$output .= $this->EE->load->view('grid_presets.js', $vars, TRUE);
+		if ( version_compare( APP_VER, '4', '>=' ) )
+		{
+			$output .= $this->EE->load->view('grid_presets.js', $vars, TRUE);
+		}
+		else 
+		{
+			$output .= $this->EE->load->view('grid_presets_ee3.js', $vars, TRUE);
+		}
 	
 		return $output;
 

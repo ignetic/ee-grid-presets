@@ -2,6 +2,14 @@ Changelog for Grid Presets
 ===============================
 
 
+## 1.3
+
+- Updated for EE6
+
+## 1.2
+
+- Updated EE4+ relationships
+
 ## 1.1
 
 - Added EE3 relationships

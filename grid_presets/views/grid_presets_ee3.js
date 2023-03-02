@@ -17,7 +17,7 @@ $(document).ready(function(){
 
 	var gridFields = gridTables.closest('.setting-field, .field-control');
 
-	var gridRowsField = 'tbody tr:not(.grid-blank-row, .no-results):visible';
+	var gridRowsField = 'tbody tr:not(.grid-blank-row):visible';
 	
 	// !! For some reason this is loaded before EE variable is ready and then again later when it is
 	if (typeof EE !== 'undefined') {
@@ -84,27 +84,24 @@ $(document).ready(function(){
 
 		// grid fields as well as Henshu support
 		gridFields.each(function() {
-
+			
 			//var fieldId = $(this).attr('id').replace('hold_field_','');
 			var fieldId = getFieldId($(this).find(gridTables));
 
 			if ( ! fieldId)
 				return true;
 
-			var presetButtons, buttonsHTML = '<div style="text-align:right; display:flex; align-items:flex-end; justify-content:flex-end; gap:5px; margin-bottom:-5px;" class="grid-presets" data-field-id="' + fieldId + '"><select class="grid-preset-select button--small" style="border-color:#cbcbda; text-align:left; padding-right:30px !important;"><option value="">- Select A Preset -</option></select> <input type="button" name="grid-preset-load" class="grid-preset-load btn button--small" value="Load"> <input type="button" name="grid-preset-delete" class="grid-preset-delete btn button--small remove" value="Delete"> <input type="button" name="grid-preset-save" class="grid-preset-save btn button--small action" value="Save"></div>';
-
-            if ($(this).find('.grid-field__footer').length > 0)	{
-                // EE6
-                presetButtons = $(buttonsHTML).insertBefore($(this).find('.grid-field__footer'));
-			} else if ($(this).closest('.field-control').length > 0)	{
-				// EE5
-				presetButtons = $(buttonsHTML).insertBefore($(this).closest('.field-control').find('.toolbar:last'));
+			var buttonsHTML = '<div style="float:right; margin-top:0;" class="grid-presets" data-field-id="' + fieldId + '"><select class="grid-preset-select"><option value="">- Select A Preset -</option></select> <input type="button" name="grid-preset-load" class="grid-preset-load btn" value="Load"> <input type="button" name="grid-preset-delete" class="grid-preset-delete btn remove" value="Delete"> <input type="button" name="grid-preset-save" class="grid-preset-save btn action" value="Save"></div>';
+			
+			if ($(this).closest('.field-control').length > 0)	{
+				// EE5 - EE6
+				var presetButtons = $(buttonsHTML).insertBefore($(this).closest('.field-control').find('.toolbar:last'));
 			} else if ($(this).find('.holder').length > 0)	{
 				// < EE3
-				presetButtons = $(buttonsHTML).appendTo($(this).find('.holder'));
+				var presetButtons = $(buttonsHTML).appendTo($(this).find('.holder'));
 				presetButtons.css('margin-top', '-28px');
 			} else {
-				presetButtons = $(buttonsHTML).insertBefore($(this).find('.toolbar:last'));
+				var presetButtons = $(buttonsHTML).insertBefore($(this).find('.toolbar:last'));
 			}
 
 			updateSelects(presets, fieldId);
@@ -135,7 +132,7 @@ $(document).ready(function(){
 				
 				var numRows = gridRows.length;
 
-				var addEntryButton = field.find('td a.grid_button_add, ul.toolbar .add a, .grid-field__footer .js-grid-add-row');
+				var addEntryButton = field.find('td a.grid_button_add, ul.toolbar .add a');
 
 				// Create one row for each value
 				for (var i in values)
@@ -144,59 +141,74 @@ $(document).ready(function(){
 
 				// Wait for field to finish initializing...
 				setTimeout(function() {
-				
+					
 					// Skip the placeholder row for "No rows have been added yet..."
-					//field.find('tbody tr.grid_row:not(.blank_row):visible').filter(':eq('+ numRows + '), :gt(' + numRows + ')').each(function(irow) {
 					field.find(gridRowsField).filter(':eq('+ numRows + '), :gt(' + numRows + ')').each(function(irow) {
 					
 						var value = values[irow];
-				
+						
 						$(this).find('> td[data-fieldtype]').each(function(icol) {
 						
 							var $cell = $(this);
 							var fieldtype = $(this).data('fieldtype');
+							
 					
 							if (fieldtype == 'relationship') {
-
-								var $relContainer = $cell.find('.fields-relate');
-								var isMultiRelate = $relContainer.is('.fields-relate-multi');
 								
-								var inputNameString = $(this).find('input.input-name').attr('name') || $(this).find('div[data-input-value]').data('input-value');
-								// make sure this is an array
-								var inputName = inputNameString.replace(/\[\]+$/,'')+'[]';
-
+								var inputName = $(this).find('input.input-name').attr('name');
+								var manualAdd = false;
+								
 								if (typeof inputName !== "undefined" && typeof value[icol] !== "undefined") {
 
 									$.each(value[icol], function(index, fieldValue) {
 										
-										// this could be done via react
+										var relRow = '';
+										var channelTitle = fieldValue;
+										var entryTitle = 'Entry ';
 										
-										var $fieldSelect = $cell.find(".fields-relate .fields-select:first .field-inputs, .scroll-wrap:first");
-										var $fieldValues = $cell.find(".fields-relate .fields-select:last .field-inputs, .scroll-wrap:last");
-										//var $field = $fieldSelect.find("input[value='"+fieldValue+"']");
-
-										if (isMultiRelate) {
+										
+										var $field = $cell.find('.relate-wrap:first input[value='+fieldValue+']');
+										
+										if ($field.length) {
+											var $label = $field.closest('label');
+											channelTitle = $label.data('channel-title');
+											entryTitle = $label.data('entry-title');
+											$label.closest('label').addClass('chosen');
+											$field.prop('checked', true);
+										} else {
+											manualAdd = true;
+										}
+									
+										if ($cell.hasClass('grid-multi-relate')) {
 											
-											var $relSelected = $('<label data-id="'+fieldValue+'">Added Entry '+fieldValue+'</label>');
-											$relSelected.appendTo($fieldValues);
+											relRow += '<label class="choice block chosen relate-manage" data-entry-id="'+fieldValue+'" data-search="{entry-title-lower}">';
+											relRow += '  <span class="relate-reorder"></span>';
+											relRow += '  <a href="" title="Remove Relationship" data-entry-id="'+fieldValue+'"></a> '+entryTitle+'<i>— '+channelTitle+'</i>';
+											relRow += '  <input type="hidden" name="'+inputName+'" value="'+fieldValue+'">';
+											relRow += '</label>';
+											
+											$cell.find('.relate-wrap:last .scroll-wrap').append(relRow);
 											
 										} else {
-
-											$fieldSelect.after('<div class="field-input-selected"><label><span class="icon--success"></span> Added Entry '+fieldValue+'<ul class="toolbar"><li class="remove"><a href=""></a></li></ul></label></div>');
+											
+											relRow += '<label class="choice block chosen" data-entry-id="'+fieldValue+'" data-search="{entry-title-lower}">';
+											relRow += '  <input type="radio" name="'+inputName+'" value="'+fieldValue+'" checked="checked">'+entryTitle+'<i>— '+channelTitle+'</i>';
+											relRow += '</label>';
+											
+											$cell.find('.relate-wrap-chosen').append(relRow);
 											
 										}
 
-										var $inputSelect = $('<input type="hidden" name="'+inputName+'" value="'+fieldValue+'">');
-
-										$inputSelect.appendTo($fieldSelect.parent());
-
+										
 									});
 
-									$cell.find('.field-empty, .no-results').hide();
+									if (manualAdd) {
+										$cell.find('.no-results').html('<b>Titles</b> available after saving.');
+									} else {
+										$cell.find('.no-results').addClass('hidden');
+									}
 									
-									// disable editing as direct DOM won't work with react
-									$cell.css('position', 'relative').append('<div style="display:block;position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.75);"><span style="position:absolute;top:45%;left:50%;transform:translateX(-50%);font-size:20px;background:#fff;padding:4px;">Loaded: save to update</span></div>');
-
+								
 								}
 								
 							} else {
@@ -267,13 +279,6 @@ $(document).ready(function(){
 		// Save preset button
 		gridFields.find('.grid-presets .grid-preset-save').on('click', function() {
 
-			/*if ($(this).closest('.grid-publish').length > 0)	{
-				// EE3
-				var field = $(this).closest('.grid-publish');
-			} else {
-				var field = $(this).closest('.holder');
-			}*/
-
 			var fieldId = $(this).closest('.grid-presets').data('field-id');
 			//var groupId = EE.publish.field_group;
 
@@ -329,12 +334,7 @@ $(document).ready(function(){
 					var fieldtype = $(this).data('fieldtype');
 
 					if (fieldtype == 'relationship') {
-						// EE3
 						$(this).find('.relate-wrap:last .scroll-wrap .chosen input').each(function(ifield) {
-							fieldRow[irow][icol][ifield] = $(this).val();
-						});
-						// EE4+
-						$(this).find('.fields-relate .fields-select input[type=hidden]').each(function(ifield) {
 							fieldRow[irow][icol][ifield] = $(this).val();
 						});
 					} else {
@@ -408,16 +408,7 @@ $(document).ready(function(){
 	
 	// Update preset select menu for this field
 	function updateSelects(presets, fieldId) {
-	
-		// remove any if already added
-		/*field = $('.grid-publish #field_id_'+fieldId+'.grid-input-form');
-		if (field.length > 0)	{
-			// EE3
-			var presetSelect = field.closest('.grid-publish').find('.grid-presets select.grid-preset-select');
-		} else {
-			var presetSelect = $('#hold_field_'+fieldId+'.publish_grid .grid-presets select.grid-preset-select');
-		}*/
-		
+
 		var presetSelect = gridFields.has('#field_id_'+fieldId).find('.grid-presets select.grid-preset-select');
 
 		presetSelect.find('option:not(:first)').remove();
