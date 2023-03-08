@@ -17,7 +17,6 @@ class Grid_presets_upd {
 	public $name = GRID_PRESETS_NAME;
 	public $version = GRID_PRESETS_VERSION; 
 	
-	private $EE;
 	private $class = 'Grid_presets';
 	private $settings_table = 'grid_presets_settings';
 	private $site_id = 1;
@@ -27,9 +26,8 @@ class Grid_presets_upd {
 	 */
 	public function __construct()
 	{
-		$this->EE = get_instance();
-		
-		$this->site_id = $this->EE->config->item('site_id');
+
+		$this->site_id = ee()->config->item('site_id');
 		
 	}
 	
@@ -42,19 +40,6 @@ class Grid_presets_upd {
 	 */
 	public function install()
 	{
-		/*
-        // Load dbforge
-        $this->EE->load->dbforge();
-		
-        //----------------------------------------
-        // EXP_MODULES
-        // preferences within module table
-        //----------------------------------------
-        if ($this->EE->db->field_exists('settings', 'modules') == false) {
-            $this->EE->dbforge->add_column('modules', array('settings' => array('type' => 'TEXT') ) );
-        }
-		*/
-		
 		$mod_data = array(
 			'module_name'			=> 'Grid_presets',
 			'module_version'		=> $this->version,
@@ -62,7 +47,7 @@ class Grid_presets_upd {
 			'has_publish_fields'	=> 'n'
 		);
 		
-		$this->EE->db->insert('modules', $mod_data);
+		ee()->db->insert('modules', $mod_data);
 		
 		
 		// Create settings table
@@ -80,28 +65,28 @@ class Grid_presets_upd {
 	 */	
 	public function uninstall()
 	{
-		$mod_id = $this->EE->db->select('module_id')
+		$mod_id = ee()->db->select('module_id')
 								->get_where('modules', array(
 									'module_name'	=> $this->class
 								))->row('module_id');
 		
-		if ($this->EE->db->table_exists('module_member_groups'))
+		if (ee()->db->table_exists('module_member_groups'))
 		{
-			$this->EE->db->where('module_id', $mod_id)->delete('module_member_groups');
+			ee()->db->where('module_id', $mod_id)->delete('module_member_groups');
 		}	
-		if ($this->EE->db->table_exists('module_member_roles')) 
+		if (ee()->db->table_exists('module_member_roles')) 
 		{
-			$this->EE->db->where('module_id', $mod_id)->delete('module_member_roles');
+			ee()->db->where('module_id', $mod_id)->delete('module_member_roles');
 		}
 		
-		$this->EE->db->where('module_name', $this->class)
+		ee()->db->where('module_name', $this->class)
 					->delete('modules');
 					 
-		$this->EE->db->where('class', $this->class)
+		ee()->db->where('class', $this->class)
 					->delete('actions');
 		
-		$this->EE->load->dbforge();
-		$this->EE->dbforge->drop_table($this->settings_table);
+		ee()->load->dbforge();
+		ee()->dbforge->drop_table($this->settings_table);
 		
 		return TRUE;
 	}
@@ -128,11 +113,11 @@ class Grid_presets_upd {
 			// Move old settings to new table
 			$presets = array();
 			
-			if ($this->EE->db->field_exists('settings', 'modules'))
+			if (ee()->db->field_exists('settings', 'modules'))
 			{
 			
 				// Get settings from old table
-				$query = $this->EE->db->select('settings')->where('module_name', $this->class)->get('modules');
+				$query = ee()->db->select('settings')->where('module_name', $this->class)->get('modules');
 				foreach ($query->result_array() as $row)
 				{
 					$presets = unserialize($row['settings']);
@@ -153,23 +138,23 @@ class Grid_presets_upd {
 							// Let's start the preset ids from 1
 							$fields['preset_id'] = $preset_id+1;
 						
-							$this->EE->db->from($this->settings_table);
-							$this->EE->db->where($fields);
-							if ($this->EE->db->count_all_results() == 0) 
+							ee()->db->from($this->settings_table);
+							ee()->db->where($fields);
+							if (ee()->db->count_all_results() == 0) 
 							{
 								$fields['preset_values'] = serialize($preset_values);
-								$query = $this->EE->db->insert($this->settings_table, $fields);
+								$query = ee()->db->insert($this->settings_table, $fields);
 							}
 							else
 							{
-								$query = $this->EE->db->update($this->settings_table, array('preset_values' => serialize($preset_values)), $fields);
+								$query = ee()->db->update($this->settings_table, array('preset_values' => serialize($preset_values)), $fields);
 							}
 							
 						}
 					}
 				
 					// Remove settings from old table
-					$this->EE->db->update('modules', array('settings' => NULL), array('module_name' => $this->class));
+					ee()->db->update('modules', array('settings' => NULL), array('module_name' => $this->class));
 					
 				}
 			
@@ -184,7 +169,7 @@ class Grid_presets_upd {
 	
 	private function add_settings_table()
 	{
-		$this->EE->load->dbforge();
+		ee()->load->dbforge();
 
 		$fields = array(
 			'id'	=> array(
@@ -218,9 +203,9 @@ class Grid_presets_upd {
 		);
 		
 
-		$this->EE->dbforge->add_field($fields);
-		$this->EE->dbforge->add_key('id', TRUE);
-		$this->EE->dbforge->create_table($this->settings_table, TRUE);		
+		ee()->dbforge->add_field($fields);
+		ee()->dbforge->add_key('id', TRUE);
+		ee()->dbforge->create_table($this->settings_table, TRUE);		
 	}
 	
 }

@@ -18,13 +18,16 @@ $(document).ready(function(){
 	var gridFields = gridTables.closest('.setting-field, .field-control');
 
 	var gridRowsField = 'tbody tr:not(.grid-blank-row, .no-results):visible';
+
 	
 	// !! For some reason this is loaded before EE variable is ready and then again later when it is
 	if (typeof EE !== 'undefined') {
 		
 		var AJAX_BASE = '<?php echo $base; ?>';
-		EE.SESSION = '';
-		
+		var ASSETS_ACT_ID = <?php echo ($assets_act_id ? $assets_act_id : 'false'); ?>;
+
+		EE.SESSION = EE.SESSION || 'S=0';
+
 		if (AJAX_BASE == '') {
 			AJAX_BASE = EE.BASE + "&C=addons_modules&M=show_module_cp&module=grid_presets&method=";
 		} else {
@@ -59,9 +62,9 @@ $(document).ready(function(){
 				
 				$.ajax({
 					url: AJAX_BASE + "get_presets&" + EE.SESSION,
-					type: "POST",
+					type: 'POST',
 					data: postData,
-					dataType: 'json', //json
+					dataType: 'json',
 					success:function(data) {
 						if (data.presets) {
 							presets = data.presets;
@@ -130,7 +133,6 @@ $(document).ready(function(){
 				var values = presets[fieldId][presetId].values;
 
 				// Only grid visible fields
-				//var gridRows = field.find('tbody tr.grid_row:not(.blank_row):visible');
 				var gridRows = field.find(gridRowsField);
 				
 				var numRows = gridRows.length;
@@ -138,30 +140,32 @@ $(document).ready(function(){
 				var addEntryButton = field.find('td a.grid_button_add, ul.toolbar .add a, .grid-field__footer .js-grid-add-row');
 
 				// Create one row for each value
-				for (var i in values)
+				for (var i in values) {
 					addEntryButton.click();
-				
+				}
+
 
 				// Wait for field to finish initializing...
 				setTimeout(function() {
 				
 					// Skip the placeholder row for "No rows have been added yet..."
-					//field.find('tbody tr.grid_row:not(.blank_row):visible').filter(':eq('+ numRows + '), :gt(' + numRows + ')').each(function(irow) {
 					field.find(gridRowsField).filter(':eq('+ numRows + '), :gt(' + numRows + ')').each(function(irow) {
 					
 						var value = values[irow];
-				
+			
 						$(this).find('> td[data-fieldtype]').each(function(icol) {
 						
 							var $cell = $(this);
-							var fieldtype = $(this).data('fieldtype');
-					
+							var fieldtype = $cell.data('fieldtype');
+						
+							icol = $cell.data('column-id') || icol;
+
 							if (fieldtype == 'relationship') {
 
 								var $relContainer = $cell.find('.fields-relate');
 								var isMultiRelate = $relContainer.is('.fields-relate-multi');
 								
-								var inputNameString = $(this).find('input.input-name').attr('name') || $(this).find('div[data-input-value]').data('input-value');
+								var inputNameString = $cell.find('input.input-name').attr('name') || $cell.find('div[data-input-value]').data('input-value');
 								// make sure this is an array
 								var inputName = inputNameString.replace(/\[\]+$/,'')+'[]';
 
@@ -173,7 +177,6 @@ $(document).ready(function(){
 										
 										var $fieldSelect = $cell.find(".fields-relate .fields-select:first .field-inputs, .scroll-wrap:first");
 										var $fieldValues = $cell.find(".fields-relate .fields-select:last .field-inputs, .scroll-wrap:last");
-										//var $field = $fieldSelect.find("input[value='"+fieldValue+"']");
 
 										if (isMultiRelate) {
 											
@@ -198,33 +201,53 @@ $(document).ready(function(){
 									$cell.css('position', 'relative').append('<div style="display:block;position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.75);"><span style="position:absolute;top:45%;left:50%;transform:translateX(-50%);font-size:20px;background:#fff;padding:4px;">Loaded: save to update</span></div>');
 
 								}
+
+							} else if (fieldtype == 'toggle') {
 								
+								if (typeof value[icol][0] !== "undefined") {
+									var fieldValue = value[icol][0];
+									if (fieldValue == '1') {
+										$cell.find('input').val(fieldValue);
+										$cell.find('.toggle-btn').click();
+									}
+								}
+
 							} else {
 							
-				
-								$(this).find('input, textarea, select').each(function(ifield) {
+								$cell.find('input, textarea, select').each(function(ifield) {
+									
+									var $field = $(this);
 
 									if (typeof value[icol] !== "undefined" && typeof value[icol][ifield] !== "undefined") {
 										
 										var fieldValue = value[icol][ifield];
 
 										// find multiselect value (there is a hidden field within this too)
-										if ($(this).is('select[multiple]')) {
-											$(this).val(fieldValue);
+										if ($field.is('select[multiple]')) {
+											$field.val(fieldValue);
 											
 										// select option or populate if value not found
-										} else if ($(this).is('select')) {
-											if ($(this).find("option[value='"+fieldValue+"']").length > 0) {
-												$(this).val(fieldValue);
+										} else if ($field.is('select')) {
+											if ($field.find("option[value='"+fieldValue+"']").length > 0) {
+												$field.val(fieldValue);
 											} else {
-												$(this).prepend('<option value="'+value[icol]+'">'+value[icol]+'</option>').val(fieldValue);
+												$field.prepend('<option value="'+value[icol]+'">'+value[icol]+'</option>').val(fieldValue);
 											}
-
+										
+										// checkboxes and radios
+										} else if ($field.is('input:checkbox') || $field.is('input:radio')) {
+											if (fieldValue) {
+												$field.closest('label').click();
+											}
+												
 										// basics
 										} else {
-											$(this).val(fieldValue);
+											$field.val(fieldValue);
 										}
-										
+
+										// react dropdown
+										$field.closest('.select__button-label').find('i').text(fieldValue);
+								
 									}
 
 								});
@@ -232,28 +255,91 @@ $(document).ready(function(){
 							}
 							
 							
-							// Fieldtype cleanup and show selected
+							/* Fieldtype cleanup and show selected */
 							
 							// File - Just display holding images
 							if (fieldtype == 'file') {
-								if ($(this).find('.file_set p input:first').length > 0) {
+								if ($cell.find('[data-file-field-react]').length > 0) {
+									var fieldValue = $(this).find('input:first').val();
+									if (fieldValue) {
+										var filename = fieldValue.replace(/^{.*}\s*/g, '');
+										$cell.find('.fields-upload-chosen').removeClass('hidden').find('.fields-upload-chosen-name > div').attr('title', filename).text(filename);
+										$cell.find('.file-field, .file-field__buttons').hide();
+									}
+								} else if ($cell.find('.file_set p input:first').length > 0) {
 									// < EE 3
-									var filename = $(this).find('.file_set p input:first').val();
+									var filename = $cell.find('.file_set p input:first').val();
 									if (filename) {
-										$(this).find('.file_set').removeClass('js_hide');
-										$(this).find('.sub_filename .choose_file').addClass('js_hide');
-										$(this).find('.file_set .filename img').attr('alt', filename).after('<br>'+filename);
+										$cell.find('.file_set').removeClass('js_hide');
+										$cell.find('.sub_filename .choose_file').addClass('js_hide');
+										$cell.find('.file_set .filename img').attr('alt', filename).after('<br>'+filename);
 									}
 								} else {
 									// EE 3
-									var filename = $(this).find('> input:first').val();
+									var filename = $cell.find('> input:first').val();
 									if (filename) {
-										$(this).find('.solo-btn').addClass('hidden');
-										$(this).find('.file-chosen').removeClass('hidden');
+										$cell.find('.solo-btn').addClass('hidden');
+										$cell.find('.file-chosen').removeClass('hidden');
 									}
 								}
 							}
+							
+							// Assets - Load via ACT
+							if (fieldtype == 'assets' && ASSETS_ACT_ID) {
+
+								var fieldValue = value[icol];
+
+								if (fieldValue)	{
+									
+									var postData = {
+										'ACT': ASSETS_ACT_ID,
+										'requestId': 1,
+										'view': 'thumbs',
+										'thumb_size': 'small',
+										'show_filenames': 'n',
+										'file_id': fieldValue
+									};
+
+									$.ajax({
+										url: '/',
+										type: 'post',
+										data: postData,
+										dataType: 'json',
+										success: function(response) {
+										   $cell.find('.assets-thumbview > ul').html(response.html);
+										   $cell.find('.assets-buttons .assets-btn').off('click').addClass('assets-disabled');
+										   $cell.find('.assets-tv-file').css('width', 'auto');
+										   $cell.append('<style>'+response.css+'</style>');
+										},
+										error: function(jqXHR, textStatus, errorThrown) {
+										   console.log(textStatus, errorThrown);
+										}
+									});
+								}
+
+							}
 								
+							if (fieldtype == 'rte') {
+								var fieldValue = $cell.find('textarea').val();
+								if ($cell.find('.ck-editor__editable').length) {
+									var editorInstance = $cell.find('.ck-editor__editable').get(0).ckeditorInstance;
+									if (typeof editorInstance !== 'undefined') {
+										editorInstance.setData( fieldValue );
+									}
+								}
+								if ($cell.find('.redactor-box').length && typeof $R !== 'undefined') {
+									var editor = $cell.find('textarea');
+									var id = $cell.find('textarea').attr('id');
+									$R('#'+id, 'source.setCode', fieldValue);
+								}
+							}
+							
+							if (fieldtype == 'colorpicker') {
+								var fieldValue = value[icol][0];
+								if (fieldValue) {
+									$cell.find('.colorpicker__input-color span').css('background', fieldValue);
+								}
+							}
 							
 						});
 					});
@@ -267,15 +353,7 @@ $(document).ready(function(){
 		// Save preset button
 		gridFields.find('.grid-presets .grid-preset-save').on('click', function() {
 
-			/*if ($(this).closest('.grid-publish').length > 0)	{
-				// EE3
-				var field = $(this).closest('.grid-publish');
-			} else {
-				var field = $(this).closest('.holder');
-			}*/
-
 			var fieldId = $(this).closest('.grid-presets').data('field-id');
-			//var groupId = EE.publish.field_group;
 
 			if (!fieldId)
 				return false;
@@ -325,6 +403,9 @@ $(document).ready(function(){
 
 				fieldRow[irow] = {};
 				$(this).find('> td[data-fieldtype]').each(function(icol) {
+					
+					icol = $(this).data('column-id') || icol;
+					
 					fieldRow[irow][icol] = {};
 					var fieldtype = $(this).data('fieldtype');
 
@@ -337,24 +418,30 @@ $(document).ready(function(){
 						$(this).find('.fields-relate .fields-select input[type=hidden]').each(function(ifield) {
 							fieldRow[irow][icol][ifield] = $(this).val();
 						});
+
+					} else if (fieldtype == 'checkboxes' || fieldtype == 'radio') {
+						$(this).find('input:checkbox, input:radio').each(function(ifield) {
+							fieldRow[irow][icol][ifield] = $(this).filter(':checked').val() || null;
+						});
 					} else {
 						$(this).find('input, textarea, select').each(function(ifield) {
+
 							fieldRow[irow][icol][ifield] = $(this).val();
+
 						});
 					}
 				});
 				presetValues[fieldId][presetId].values = fieldRow;
 			});
 
-			
 			var postData = {'field_ids': fieldIds, 'preset': presetValues, 'newpreset': newPreset};
 			postData[CSRF_TOKEN_NAME] = EE.CSRF_TOKEN;
 			
 			$.ajax({
 				url: AJAX_BASE + "save_preset&" + EE.SESSION,
-				type: "POST",
+				type: 'POST',
 				data: postData,
-				dataType: 'json', //json
+				dataType: 'json',
 				success:function(data) {
 					presets = data.presets;
 					updateSelects(presets, fieldId);
@@ -405,19 +492,11 @@ $(document).ready(function(){
 		});
 		
 	}
+
 	
 	// Update preset select menu for this field
 	function updateSelects(presets, fieldId) {
-	
-		// remove any if already added
-		/*field = $('.grid-publish #field_id_'+fieldId+'.grid-input-form');
-		if (field.length > 0)	{
-			// EE3
-			var presetSelect = field.closest('.grid-publish').find('.grid-presets select.grid-preset-select');
-		} else {
-			var presetSelect = $('#hold_field_'+fieldId+'.publish_grid .grid-presets select.grid-preset-select');
-		}*/
-		
+
 		var presetSelect = gridFields.has('#field_id_'+fieldId).find('.grid-presets select.grid-preset-select');
 
 		presetSelect.find('option:not(:first)').remove();
@@ -457,6 +536,5 @@ $(document).ready(function(){
 
 		return fieldId;
 	}
-
 
 });

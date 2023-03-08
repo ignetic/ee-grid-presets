@@ -18,8 +18,7 @@ class Grid_presets_mcp {
 	public $version = GRID_PRESETS_VERSION; 
 	
 	public $return_data;
-	
-	private $EE;
+
 	private $class = 'Grid_presets';
 	private $settings_table = 'grid_presets_settings';
 	private $site_id = 1;
@@ -31,10 +30,7 @@ class Grid_presets_mcp {
 	 */
 	public function __construct()
 	{
-		// pre EE 2.6.0 compatibility
-		$this->EE = get_instance();
-		
-		$this->site_id = $this->EE->config->item('site_id');
+		$this->site_id = ee()->config->item('site_id');
 		
 		if(defined('CSRF_TOKEN'))
 		{
@@ -57,15 +53,15 @@ class Grid_presets_mcp {
 	public function index()
 	{
 		// If this isn't an AJAX request, just display the "base" settings form.
-		if ( ! $this->EE->input->is_ajax_request())
+		if ( ! ee()->input->is_ajax_request())
 		{
 			if ( version_compare( APP_VER, '2.6.0', '<' ) )
 			{
-				$this->EE->cp->set_variable( 'cp_page_title', lang('grid_presets_module_name') );
+				ee()->cp->set_variable( 'cp_page_title', lang('grid_presets_module_name') );
 			}
 			else
 			{
-				$this->EE->view->cp_page_title = lang('grid_presets_module_name');
+				ee()->view->cp_page_title = lang('grid_presets_module_name');
 			}
 			
 			return "Nothing to see here...";
@@ -83,17 +79,17 @@ class Grid_presets_mcp {
 		
 		$presets = array();
 
-		if ($this->EE->input->post('field_ids') !== FALSE)
+		if (ee()->input->post('field_ids') !== FALSE)
 		{
-			$field_ids = $this->EE->input->post('field_ids');
+			$field_ids = ee()->input->post('field_ids');
 			
 		}
 		if (is_array($field_ids) && !empty($field_ids))
 		{
-			$this->EE->db->where_in('field_id', $field_ids);
+			ee()->db->where_in('field_id', $field_ids);
 		}
 
-		$query = $this->EE->db->where('site_id', $this->site_id)->get($this->settings_table);
+		$query = ee()->db->where('site_id', $this->site_id)->get($this->settings_table);
 		
 		if ($query->num_rows() > 0)
 		{
@@ -102,10 +98,10 @@ class Grid_presets_mcp {
 				$presets[$row['field_id']][$row['preset_id']] = unserialize($row['preset_values']);
 			}
 		}
-		elseif ($this->EE->db->field_exists('settings', 'modules'))
+		elseif (ee()->db->field_exists('settings', 'modules'))
 		{
 				// Try old settings
-				$query = $this->EE->db->select('settings')->where('module_name', $this->class)->get('modules');
+				$query = ee()->db->select('settings')->where('module_name', $this->class)->get('modules');
 				foreach ($query->result_array() as $row)
 				{
 					$presets = unserialize($row['settings']);
@@ -114,7 +110,7 @@ class Grid_presets_mcp {
 		
 		if ($ajax === TRUE)
 		{
-			$this->EE->output->send_ajax_response(array('presets' => $presets, 'CSRF_TOKEN' => $this->csrf_token));
+			ee()->output->send_ajax_response(array('presets' => $presets, 'CSRF_TOKEN' => $this->csrf_token));
 		}
 		else
 		{
@@ -132,15 +128,15 @@ class Grid_presets_mcp {
 	
 		$field_ids = array();
 		
-		if ($this->EE->input->post('field_ids') !== FALSE)
+		if (ee()->input->post('field_ids') !== FALSE)
 		{
-			$field_ids = $this->EE->input->post('field_ids');
+			$field_ids = ee()->input->post('field_ids');
 		}
 		
-		if($this->EE->input->post('preset')) 
+		if(ee()->input->post('preset')) 
 		{
-			$preset = $this->EE->input->post('preset');
-			$newpreset = $this->EE->input->post('newpreset');
+			$preset = ee()->input->post('preset');
+			$newpreset = ee()->input->post('newpreset');
 			
 			foreach($preset as $field_id => $val)
 			{
@@ -154,7 +150,7 @@ class Grid_presets_mcp {
 	
 					// is this a new preset?... get highest key
 					if ($newpreset == 'true' && $preset_id == 0){
-						$query = $this->EE->db->select_max('preset_id')->from($this->settings_table)->where($fields)->get();
+						$query = ee()->db->select_max('preset_id')->from($this->settings_table)->where($fields)->get();
 						if ($query->num_rows() > 0)
 						{
 							foreach ($query->result_array() as $row)
@@ -167,18 +163,18 @@ class Grid_presets_mcp {
 
 					$fields['preset_id'] = $preset_id;
 				
-					$this->EE->db->from($this->settings_table);
-					$this->EE->db->where($fields);
-					if ($this->EE->db->count_all_results() == 0) 
+					ee()->db->from($this->settings_table);
+					ee()->db->where($fields);
+					if (ee()->db->count_all_results() == 0) 
 					{
 						
 						$fields['preset_values'] = serialize($preset_values);
-						$query = $this->EE->db->insert($this->settings_table, $fields);
+						$query = ee()->db->insert($this->settings_table, $fields);
 					
 					}
 					else
 					{
-						$query = $this->EE->db->update($this->settings_table, array('preset_values' => serialize($preset_values)), $fields);
+						$query = ee()->db->update($this->settings_table, array('preset_values' => serialize($preset_values)), $fields);
 					}
 					
 				}
@@ -186,7 +182,7 @@ class Grid_presets_mcp {
 			
 		}
 		
-		$this->EE->output->send_ajax_response(array('presets' => $this->get_presets($field_ids, TRUE), 'CSRF_TOKEN' => $this->csrf_token));
+		ee()->output->send_ajax_response(array('presets' => $this->get_presets($field_ids, TRUE), 'CSRF_TOKEN' => $this->csrf_token));
 		
 	}
 	
@@ -200,25 +196,26 @@ class Grid_presets_mcp {
 		// Get existing presets
 		$field_ids = array();
 		
-		if ($this->EE->input->post('field_ids') !== FALSE)
+		if (ee()->input->post('field_ids') !== FALSE)
 		{
-			$field_ids = $this->EE->input->post('field_ids');
+			$field_ids = ee()->input->post('field_ids');
 		}		
 		
 		// Delete
 		$presets = array();
-		$field_id = $this->EE->input->post('field_id');
-		$preset_id = $this->EE->input->post('preset_id');
+		$field_id = ee()->input->post('field_id');
+		$preset_id = ee()->input->post('preset_id');
 		
 		if ($field_id && $preset_id)
 		{
-			$this->EE->db->delete($this->settings_table, array('site_id' => $this->site_id, 'field_id' => $field_id, 'preset_id' => $preset_id)); 
+			ee()->db->delete($this->settings_table, array('site_id' => $this->site_id, 'field_id' => $field_id, 'preset_id' => $preset_id)); 
 			
 		}
 		
-		$this->EE->output->send_ajax_response(array('presets' => $this->get_presets($field_ids, TRUE), 'CSRF_TOKEN' => $this->csrf_token));
+		ee()->output->send_ajax_response(array('presets' => $this->get_presets($field_ids, TRUE), 'CSRF_TOKEN' => $this->csrf_token));
 	}
+
 	
 }
 /* End of file mcp.grid_presets.php */
-/* Location: /system/expressionengine/third_party/grid_presets/mcp.grid_presets.php */
+

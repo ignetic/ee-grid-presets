@@ -27,8 +27,6 @@ class Grid_presets_ext {
 	 */
 	public function __construct($settings = array())
 	{
-	
-		$this->EE = get_instance();
 		
 		// --------------------------------------------
 		//  Settings!
@@ -59,7 +57,7 @@ class Grid_presets_ext {
 
 		foreach($hooks as $hook)
 		{
-			$this->EE->db->insert('extensions', array(
+			ee()->db->insert('extensions', array(
 				'class'    => get_class($this),
 				'method'   => $hook,
 				'hook'     => $hook,
@@ -94,7 +92,7 @@ class Grid_presets_ext {
 		//  Delete the extension hooks
 		// -------------------------------------------
 
-		$this->EE->db->where('class', get_class($this))
+		ee()->db->where('class', get_class($this))
 		             ->delete('exp_extensions');
 	}
 
@@ -109,12 +107,17 @@ class Grid_presets_ext {
 	
 		$output = '';
 	
-		if ($this->EE->extensions->last_call !== FALSE)
+		if (ee()->extensions->last_call !== FALSE)
 		{
-			$output = $this->EE->extensions->last_call;
+			$output = ee()->extensions->last_call;
 		}
 
 		$vars['base'] = '';
+		$vars['assets_act_id'] = false;
+		
+		if (ee()->addons_model->module_installed('assets')) {
+			$vars['assets_act_id'] = $this->fetch_action_id( 'Assets_mcp', 'get_selected_files' );
+		}
 		
 		if ( version_compare( APP_VER, '3', '>=' ) )
 		{
@@ -123,15 +126,39 @@ class Grid_presets_ext {
 		
 		if ( version_compare( APP_VER, '4', '>=' ) )
 		{
-			$output .= $this->EE->load->view('grid_presets.js', $vars, TRUE);
+			$output .= ee()->load->view('grid_presets.js', $vars, TRUE);
 		}
 		else 
 		{
-			$output .= $this->EE->load->view('grid_presets_ee3.js', $vars, TRUE);
+			$output .= ee()->load->view('grid_presets_ee3.js', $vars, TRUE);
 		}
 	
 		return $output;
 
+	}
+
+	
+	
+	/**
+	 * Fetch Action ID
+	 *
+	 * @param $class
+	 * @param $method
+	 * @return bool
+	 */
+	private function fetch_action_id($class, $method)
+	{
+		ee()->db->select('action_id');
+		ee()->db->where('class', $class);
+		ee()->db->where('method', $method);
+		$query = ee()->db->get('actions');
+
+		if ($query->num_rows() == 0)
+		{
+			return false;
+		}
+
+		return $query->row('action_id');
 	}
 
 }
