@@ -2,6 +2,18 @@ Changelog for Grid Presets
 ===============================
 
 
+## 1.4.4
+
+- Fixed loading older presets saved by column position (rows were added but left empty)
+- Fixed a JS error when loading a preset into a Grid with columns added after it was saved (toggle/colour picker)
+- Fixed new presets overwriting preset 10 once a field had 10 or more presets
+- Fixed checkboxes, radios and selectable buttons loading into the wrong options, and defaults being unchecked
+- Fixed toggles only loading "on" (they can now be loaded "off" when the default is on)
+- Fixed select values containing quotes breaking the load, and missing options being added with the wrong value
+- Security: preset names and loaded values are escaped (preset names could inject HTML into the CP)
+- Security: stored presets are unserialized as arrays only
+- Performance: no database queries on every CP page; presets are only requested on publish pages with Grid fields
+
 ## 1.4.3
 
 - Fixed JS error in the control panel when the CP URL has no session ID (cookie-only sessions)

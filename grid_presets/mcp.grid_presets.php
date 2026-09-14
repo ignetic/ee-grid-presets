@@ -95,7 +95,13 @@ class Grid_presets_mcp {
 		{
 			foreach ($query->result_array() as $row)
 			{
-				$presets[$row['field_id']][$row['preset_id']] = unserialize($row['preset_values']);
+				$preset_values = $this->unserialize_values($row['preset_values']);
+
+				// Skip corrupt/truncated presets
+				if ($preset_values !== FALSE)
+				{
+					$presets[$row['field_id']][$row['preset_id']] = $preset_values;
+				}
 			}
 		}
 		elseif (ee()->db->field_exists('settings', 'modules'))
@@ -104,15 +110,16 @@ class Grid_presets_mcp {
 				$query = ee()->db->select('settings')->where('module_name', $this->class)->get('modules');
 				foreach ($query->result_array() as $row)
 				{
-					if ($row['settings']) {
-						$presets = unserialize($row['settings']);
+					$settings = $this->unserialize_values($row['settings']);
+					if ($settings !== FALSE) {
+						$presets = $settings;
 					}
 				}
 		}
-		
+
 		if ($ajax === TRUE)
 		{
-			ee()->output->send_ajax_response(array('presets' => $presets, 'CSRF_TOKEN' => $this->csrf_token));
+			ee()->output->send_ajax_response(array('presets' => $presets, 'assets_act_id' => $this->get_assets_act_id(), 'CSRF_TOKEN' => $this->csrf_token));
 		}
 		else
 		{
@@ -152,7 +159,8 @@ class Grid_presets_mcp {
 	
 					// is this a new preset?... get highest key
 					if ($newpreset == 'true' && $preset_id == 0){
-						$query = ee()->db->select_max('preset_id')->from($this->settings_table)->where($fields)->get();
+						// preset_id is a varchar, so cast for a numeric max (as text, '9' sorts after '10')
+						$query = ee()->db->select('MAX(CAST(preset_id AS UNSIGNED)) AS preset_id', FALSE)->from($this->settings_table)->where($fields)->get();
 						if ($query->num_rows() > 0)
 						{
 							foreach ($query->result_array() as $row)
@@ -217,7 +225,45 @@ class Grid_presets_mcp {
 		ee()->output->send_ajax_response(array('presets' => $this->get_presets($field_ids, TRUE), 'CSRF_TOKEN' => $this->csrf_token));
 	}
 
-	
+
+	/**
+	 * Unserialize stored preset data (arrays only, never objects)
+	 *
+	 * @return array|bool FALSE if empty or invalid
+	 */
+	private function unserialize_values($data)
+	{
+		if ( ! $data)
+		{
+			return FALSE;
+		}
+
+		$values = @unserialize($data, array('allowed_classes' => false));
+
+		return is_array($values) ? $values : FALSE;
+	}
+
+
+	/**
+	 * Assets action ID (for loading Assets thumbnails), if Assets is installed
+	 *
+	 * @return int|bool
+	 */
+	private function get_assets_act_id()
+	{
+		if ( ! ee()->addons_model->module_installed('assets'))
+		{
+			return FALSE;
+		}
+
+		$query = ee()->db->select('action_id')
+			->where('class', 'Assets_mcp')
+			->where('method', 'get_selected_files')
+			->get('actions');
+
+		return $query->num_rows() ? (int) $query->row('action_id') : FALSE;
+	}
+
 }
 /* End of file mcp.grid_presets.php */
 

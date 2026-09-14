@@ -2,7 +2,7 @@ $(document).ready(function(){
 
 	// Saved Presets
 	var presets = {};
-	
+
 	// grid fields in EE2 and EE3 as well as EE2 Henshu support
 	// Henshu: '.pageContents.group form.henshu .henshu_encapsulate:has("table.grid_field")'
 	// EE2 '#publishForm .publish_field.publish_grid'
@@ -19,12 +19,15 @@ $(document).ready(function(){
 
 	var gridRowsField = 'tbody tr:not(.grid-blank-row, .no-results):visible';
 
-	
+	// Fieldtypes where presets store the checked state of each checkbox/radio input
+	var checkableFieldtypes = ['checkboxes', 'radio', 'selectable_buttons'];
+
+
 	// !! For some reason this is loaded before EE variable is ready and then again later when it is
 	if (typeof EE !== 'undefined') {
-		
+
 		var AJAX_BASE = '<?php echo $base; ?>';
-		var ASSETS_ACT_ID = <?php echo ($assets_act_id ? $assets_act_id : 'false'); ?>;
+		var ASSETS_ACT_ID = false; // returned with the presets
 
 		EE.SESSION = EE.SESSION || 'S=0';
 
@@ -39,30 +42,33 @@ $(document).ready(function(){
 
 		// Pre EE 2.8 support
 		var CSRF_TOKEN_NAME = 'CSRF_TOKEN';
-		
+
 		if (!EE.CSRF_TOKEN) {
 			EE.CSRF_TOKEN = EE.XID;
 			CSRF_TOKEN_NAME = 'XID';
 		}
-		
+
 		// Get grid field ids
 		var fieldIds = new Array();
 
 		gridFields.find(gridTables).each(function() {
 			var fieldId = getFieldId($(this));
-			fieldIds.push(parseInt(fieldId));
+			if (fieldId) {
+				fieldIds.push(parseInt(fieldId));
+			}
 		});
-				
+
 		// Need to wait after `document.ready` has finished executing!
 		setTimeout(function() {
-			
-				// Make sure that this is the publish form
-				if (!EE.publish)
+
+				// Make sure that this is the publish form and it has grid fields
+				// (otherwise get_presets would return every preset on the site)
+				if (!EE.publish || fieldIds.length == 0)
 					return;
 
 				var postData = {'field_ids': fieldIds};
 				postData[CSRF_TOKEN_NAME] = EE.CSRF_TOKEN;
-				
+
 				$.ajax({
 					url: AJAX_BASE + "get_presets&" + EE.SESSION,
 					type: 'POST',
@@ -72,19 +78,20 @@ $(document).ready(function(){
 						if (data.presets) {
 							presets = data.presets;
 						}
+						ASSETS_ACT_ID = data.assets_act_id || false;
 						initPresets(presets);
 						EE.CSRF_TOKEN = data.CSRF_TOKEN;
 						$('input[name='+CSRF_TOKEN_NAME+']').val(data.CSRF_TOKEN);
 					},
 					error:function(jqXHR, textStatus, errorMessage) {
 						console.log('Grid Presets - '+textStatus+': '+errorMessage);
-					} 
+					}
 				});
-				
+
 		}, 0);
-	
+
 	}
-	
+
 	// start the process
 	function initPresets(presets) {
 
@@ -114,10 +121,10 @@ $(document).ready(function(){
 			}
 
 			updateSelects(presets, fieldId);
-			
+
 		});
-		
-		
+
+
 		// Load preset button
 		gridFields.find('.grid-presets .grid-preset-load').on('click', function() {
 
@@ -127,17 +134,17 @@ $(document).ready(function(){
 			if (fieldId && presetId != "") {
 
 				var field = gridFields.has('#field_id_'+fieldId);
-				
-				if (typeof presets[fieldId] == 'undefined') {
+
+				if (typeof presets[fieldId] == 'undefined' || typeof presets[fieldId][presetId] == 'undefined') {
 					alert('Preset not found');
 					return false;
 				}
 
-				var values = presets[fieldId][presetId].values;
+				var values = presets[fieldId][presetId].values || {};
 
 				// Only grid visible fields
 				var gridRows = field.find(gridRowsField);
-				
+
 				var numRows = gridRows.length;
 
 				var addEntryButton = field.find('td a.grid_button_add, ul.toolbar .add a, .grid-field__footer .js-grid-add-row');
@@ -150,99 +157,130 @@ $(document).ready(function(){
 
 				// Wait for field to finish initializing...
 				setTimeout(function() {
-				
+
 					// Skip the placeholder row for "No rows have been added yet..."
 					field.find(gridRowsField).filter(':eq('+ numRows + '), :gt(' + numRows + ')').each(function(irow) {
-					
+
 						var value = values[irow];
-			
+
+						if (typeof value !== 'object' || value === null)
+							return true;
+
+						// Older presets are keyed by column position (so always include 0),
+						// newer ones by column ID (never 0)
+						var keyedByPosition = ('0' in value);
+
 						$(this).find('> td[data-fieldtype]').each(function(icol) {
-						
+
 							var $cell = $(this);
 							var fieldtype = $cell.data('fieldtype');
-						
-							icol = $cell.data('column-id') || icol;
+							var cellValue = value[keyedByPosition ? icol : $cell.data('column-id')];
+
+							// Column isn't in this preset (e.g. added after the preset was saved)
+							if (typeof cellValue === "undefined" || cellValue === null)
+								return true;
 
 							if (fieldtype == 'relationship') {
 
 								var $relContainer = $cell.find('.fields-relate');
 								var isMultiRelate = $relContainer.is('.fields-relate-multi');
-								
+
 								var inputNameString = $cell.find('input.input-name').attr('name') || $cell.find('div[data-input-value]').data('input-value');
-								// make sure this is an array
-								var inputName = inputNameString.replace(/\[\]+$/,'')+'[]';
 
-								if (typeof inputName !== "undefined" && typeof value[icol] !== "undefined") {
+								if (inputNameString) {
 
-									$.each(value[icol], function(index, fieldValue) {
-										
+									// make sure this is an array
+									var inputName = inputNameString.replace(/\[\]+$/,'')+'[]';
+
+									$.each(cellValue, function(index, fieldValue) {
+
 										// this could be done via react
-										
+
 										var $fieldSelect = $cell.find(".fields-relate .fields-select:first .field-inputs, .scroll-wrap:first");
 										var $fieldValues = $cell.find(".fields-relate .fields-select:last .field-inputs, .scroll-wrap:last");
 
 										if (isMultiRelate) {
-											
-											var $relSelected = $('<label data-id="'+fieldValue+'">Added Entry '+fieldValue+'</label>');
+
+											var $relSelected = $('<label data-id="'+escapeHtml(fieldValue)+'">Added Entry '+escapeHtml(fieldValue)+'</label>');
 											$relSelected.appendTo($fieldValues);
-											
+
 										} else {
 
-											$fieldSelect.after('<div class="field-input-selected"><label><span class="icon--success"></span> Added Entry '+fieldValue+'<ul class="toolbar"><li class="remove"><a href=""></a></li></ul></label></div>');
-											
+											$fieldSelect.after('<div class="field-input-selected"><label><span class="icon--success"></span> Added Entry '+escapeHtml(fieldValue)+'<ul class="toolbar"><li class="remove"><a href=""></a></li></ul></label></div>');
+
 										}
 
-										var $inputSelect = $('<input type="hidden" name="'+inputName+'" value="'+fieldValue+'">');
+										var $inputSelect = $('<input type="hidden">').attr('name', inputName).val(fieldValue);
 
 										$inputSelect.appendTo($fieldSelect.parent());
 
 									});
 
 									$cell.find('.field-empty, .no-results').hide();
-									
+
 									// disable editing as direct DOM won't work with react
 									$cell.css('position', 'relative').append('<div style="display:block;position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.75);"><span style="position:absolute;top:45%;left:50%;transform:translateX(-50%);font-size:20px;background:#fff;padding:4px;">Loaded: save to update</span></div>');
 
 								}
 
 							} else if (fieldtype == 'toggle') {
-								
-								if (typeof value[icol][0] !== "undefined") {
-									var fieldValue = value[icol][0];
-									if (fieldValue == '1') {
-										$cell.find('input').val(fieldValue);
-										$cell.find('.toggle-btn').click();
-									}
+
+								// EE's toggle click handler flips the on/off class and sets the hidden input,
+								// so only click when the state needs to change
+								var $toggle = $cell.find('.toggle-btn');
+								var toggleOn = (cellValue[0] == '1' || cellValue[0] == 'y');
+
+								if ($toggle.length && $toggle.hasClass('on') !== toggleOn) {
+									$toggle.click();
 								}
 
+							} else if ($.inArray(fieldtype, checkableFieldtypes) !== -1) {
+
+								// Same inputs as saved (skips EE's hidden input before the options)
+								$cell.find('input:checkbox, input:radio').each(function(ifield) {
+
+									var $field = $(this);
+									var checked = !!cellValue[ifield];
+
+									// Only click when the state differs, so options checked by default aren't toggled off.
+									// A checked radio can't be unchecked by clicking; checking another option does that.
+									if ($field.prop('checked') !== checked && (checked || $field.is(':checkbox'))) {
+										var $label = $field.closest('label');
+										($label.length ? $label : $field).click();
+									}
+
+								});
+
 							} else {
-							
+
 								$cell.find('input, textarea, select').each(function(ifield) {
-									
+
 									var $field = $(this);
 
-									if (typeof value[icol] !== "undefined" && typeof value[icol][ifield] !== "undefined") {
-										
-										var fieldValue = value[icol][ifield];
+									if (typeof cellValue[ifield] !== "undefined") {
+
+										var fieldValue = cellValue[ifield];
 
 										// find multiselect value (there is a hidden field within this too)
 										if ($field.is('select[multiple]')) {
 											$field.val(fieldValue);
-											
+
 										// select option or populate if value not found
 										} else if ($field.is('select')) {
-											if ($field.find("option[value='"+fieldValue+"']").length > 0) {
-												$field.val(fieldValue);
-											} else {
-												$field.prepend('<option value="'+value[icol]+'">'+value[icol]+'</option>').val(fieldValue);
+											var optionExists = $field.find('option').filter(function() {
+												return this.value == fieldValue;
+											}).length > 0;
+											if ( ! optionExists) {
+												$field.prepend($('<option>').val(fieldValue).text(fieldValue));
 											}
-										
+											$field.val(fieldValue);
+
 										// checkboxes and radios
 										} else if ($field.is('input:checkbox') || $field.is('input:radio')) {
-											if (fieldValue) {
+											if (fieldValue && ! $field.prop('checked')) {
 												$field.closest('label').click();
 											}
-												
+
 										// basics
 										} else {
 											$field.val(fieldValue);
@@ -250,16 +288,16 @@ $(document).ready(function(){
 
 										// react dropdown
 										$field.closest('.select__button-label').find('i').text(fieldValue);
-								
+
 									}
 
 								});
-								
+
 							}
-							
-							
+
+
 							/* Fieldtype cleanup and show selected */
-							
+
 							// File - Just display holding images
 							if (fieldtype == 'file') {
 								if ($cell.find('[data-file-field-react]').length > 0) {
@@ -275,7 +313,7 @@ $(document).ready(function(){
 									if (filename) {
 										$cell.find('.file_set').removeClass('js_hide');
 										$cell.find('.sub_filename .choose_file').addClass('js_hide');
-										$cell.find('.file_set .filename img').attr('alt', filename).after('<br>'+filename);
+										$cell.find('.file_set .filename img').attr('alt', filename).after('<br>'+escapeHtml(filename));
 									}
 								} else {
 									// EE 3
@@ -286,14 +324,14 @@ $(document).ready(function(){
 									}
 								}
 							}
-							
+
 							// Assets - Load via ACT
 							if (fieldtype == 'assets' && ASSETS_ACT_ID) {
 
-								var fieldValue = value[icol];
+								var fieldValue = cellValue;
 
 								if (fieldValue)	{
-									
+
 									var postData = {
 										'ACT': ASSETS_ACT_ID,
 										'requestId': 1,
@@ -321,7 +359,7 @@ $(document).ready(function(){
 								}
 
 							}
-								
+
 							if (fieldtype == 'rte') {
 								var fieldValue = $cell.find('textarea').val();
 								if ($cell.find('.ck-editor__editable').length) {
@@ -336,23 +374,23 @@ $(document).ready(function(){
 									$R('#'+id, 'source.setCode', fieldValue);
 								}
 							}
-							
+
 							if (fieldtype == 'colorpicker') {
-								var fieldValue = value[icol][0];
+								var fieldValue = cellValue[0];
 								if (fieldValue) {
 									$cell.find('.colorpicker__input-color span').css('background', fieldValue);
 								}
 							}
-							
+
 						});
 					});
 				}, 0);
 
 			}
-			
+
 		});
-		
-		
+
+
 		// Save preset button
 		gridFields.find('.grid-presets .grid-preset-save').on('click', function() {
 
@@ -360,36 +398,36 @@ $(document).ready(function(){
 
 			if (!fieldId)
 				return false;
-			
+
 			// if no rows exist, do nothing
-			
+
 			var field = gridFields.has('#field_id_'+fieldId);
-			
+
 			var gridRows = field.find(gridRowsField); //field.find('tbody tr.grid_row:not(.blank_row):visible');
 
 			// Get the row data and save
 			var numRows = gridRows.length;
-		
+
 			if (!numRows)
 				return false;
-			
+
 			var presetId = $(this).parent().find('.grid-preset-select').val();
 			var presetName = $(this).parent().find('.grid-preset-select option:selected').text();
-			
+
 			// Is this a new preset?
 			var newPreset = false;
 			if (!presetId) {
 				newPreset = true;
 				presetId = 0;
-				
+
 				presetName = prompt("Please name your preset");
-				
+
 				if (!presetName)
 					return false;
 			} else {
-			
+
 				var answer = confirm("Overwrite this preset?\n'"+presetName+"'");
-				
+
 				if (!answer)
 					return false;
 			}
@@ -398,17 +436,17 @@ $(document).ready(function(){
 			var presetValues = {}
 			presetValues[fieldId] = {}
 			presetValues[fieldId][presetId] = {'name':presetName};
-			
+
 			var fieldRow = {};
-			
+
 			// search all field types (more to add)
 			gridRows.each(function(irow) {
 
 				fieldRow[irow] = {};
 				$(this).find('> td[data-fieldtype]').each(function(icol) {
-					
+
 					icol = $(this).data('column-id') || icol;
-					
+
 					fieldRow[irow][icol] = {};
 					var fieldtype = $(this).data('fieldtype');
 
@@ -422,7 +460,7 @@ $(document).ready(function(){
 							fieldRow[irow][icol][ifield] = $(this).val();
 						});
 
-					} else if (fieldtype == 'checkboxes' || fieldtype == 'radio') {
+					} else if ($.inArray(fieldtype, checkableFieldtypes) !== -1) {
 						$(this).find('input:checkbox, input:radio').each(function(ifield) {
 							fieldRow[irow][icol][ifield] = $(this).filter(':checked').val() || null;
 						});
@@ -434,12 +472,13 @@ $(document).ready(function(){
 						});
 					}
 				});
-				presetValues[fieldId][presetId].values = fieldRow;
 			});
+
+			presetValues[fieldId][presetId].values = fieldRow;
 
 			var postData = {'field_ids': fieldIds, 'preset': presetValues, 'newpreset': newPreset};
 			postData[CSRF_TOKEN_NAME] = EE.CSRF_TOKEN;
-			
+
 			$.ajax({
 				url: AJAX_BASE + "save_preset&" + EE.SESSION,
 				type: 'POST',
@@ -452,7 +491,7 @@ $(document).ready(function(){
 				},
 				error:function(jqXHR, textStatus, errorMessage) {
 					alert(textStatus+': '+errorMessage);
-				} 
+				}
 			});
 
 		});
@@ -465,18 +504,18 @@ $(document).ready(function(){
 
 			var presetId = $(this).parent().find('.grid-preset-select').val();
 			var presetName = $(this).parent().find('.grid-preset-select option:selected').text();
-			
+
 			if (!fieldId || !presetId)
 				return false;
-				
+
 			var answer = confirm("Are you sure you want to delete this preset? \n'"+presetName+"'");
-			
+
 			if (!answer)
 				return false;
 
 			var postData = {'field_ids': fieldIds, 'field_id': fieldId, 'preset_id': presetId};
 			postData[CSRF_TOKEN_NAME] = EE.CSRF_TOKEN;
-			
+
 			$.ajax({
 				url: AJAX_BASE + "delete_preset&" + EE.SESSION,
 				type: "POST",
@@ -489,39 +528,39 @@ $(document).ready(function(){
 				},
 				error:function(jqXHR, textStatus, errorMessage) {
 					alert(textStatus+': '+errorMessage);
-				} 
+				}
 			});
-		
+
 		});
-		
+
 	}
 
-	
+
 	// Update preset select menu for this field
 	function updateSelects(presets, fieldId) {
 
 		var presetSelect = gridFields.has('#field_id_'+fieldId).find('.grid-presets select.grid-preset-select');
 
 		presetSelect.find('option:not(:first)').remove();
-		
+
 		// search presets array to add to the individual select menus
 		if (typeof presets[fieldId] != 'undefined') {
-			// add options to selects
+			// add options to selects (as text, so names can't inject HTML)
 			for (var i in presets[fieldId]) {
-				if (typeof presets[fieldId][i] != 'undefined') {
-					presetSelect.append('<option value="'+ i +'">'+ presets[fieldId][i].name +'</option>');
+				if (presets[fieldId][i]) {
+					presetSelect.append($('<option>').val(i).text(presets[fieldId][i].name));
 				}
 			}
-		
+
 		}
 	}
-	
+
 	function getFieldId($field) {
 		var fieldName = false;
 		var fieldId = false;
-		
+
 		fieldName = $field.attr('id');
-		
+
 		// try other EE versions
 		if (!fieldName) {
 			if ($field.find('.grid-input-form').length > 0) {
@@ -532,12 +571,18 @@ $(document).ready(function(){
 				var fieldId = $field.find('.grid_field_container:first').attr('id');
 			}
 		}
-		
+
 		if (fieldName) {
 			fieldId = fieldName.replace('field_id_','');
 		}
 
 		return fieldId;
+	}
+
+	function escapeHtml(value) {
+		return String(value === null || typeof value === 'undefined' ? '' : value).replace(/[&<>"']/g, function(chr) {
+			return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[chr];
+		});
 	}
 
 });

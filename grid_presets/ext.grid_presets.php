@@ -113,13 +113,10 @@ class Grid_presets_ext {
 			$output = ee()->extensions->last_call;
 		}
 
+		// This runs for every CP page (as a separate JS request), so avoid DB queries here.
+		// The Assets action ID is returned with the presets instead.
 		$vars['base'] = '';
-		$vars['assets_act_id'] = false;
-		
-		if (ee()->addons_model->module_installed('assets')) {
-			$vars['assets_act_id'] = $this->fetch_action_id( 'Assets_mcp', 'get_selected_files' );
-		}
-		
+
 		if ( version_compare( APP_VER, '3', '>=' ) )
 		{
 			$vars['base'] = ee('CP/URL')->make('cp/addons/settings/grid_presets', array(), '', '') . '/'; 
@@ -140,28 +137,6 @@ class Grid_presets_ext {
 
 	
 	
-	/**
-	 * Fetch Action ID
-	 *
-	 * @param $class
-	 * @param $method
-	 * @return bool
-	 */
-	private function fetch_action_id($class, $method)
-	{
-		ee()->db->select('action_id');
-		ee()->db->where('class', $class);
-		ee()->db->where('method', $method);
-		$query = ee()->db->get('actions');
-
-		if ($query->num_rows() == 0)
-		{
-			return false;
-		}
-
-		return $query->row('action_id');
-	}
-
 }
 /* End of file ext.grid_presets.php */
 /* Location: /system/expressionengine/third_party/grid_presets/ext.grid_presets.php */

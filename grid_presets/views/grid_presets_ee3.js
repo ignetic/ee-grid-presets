@@ -226,11 +226,13 @@ $(document).ready(function(){
 											
 										// select option or populate if value not found
 										} else if ($(this).is('select')) {
-											if ($(this).find("option[value='"+fieldValue+"']").length > 0) {
-												$(this).val(fieldValue);
-											} else {
-												$(this).prepend('<option value="'+value[icol]+'">'+value[icol]+'</option>').val(fieldValue);
+											var optionExists = $(this).find('option').filter(function() {
+												return this.value == fieldValue;
+											}).length > 0;
+											if ( ! optionExists) {
+												$(this).prepend($('<option>').val(fieldValue).text(fieldValue));
 											}
+											$(this).val(fieldValue);
 
 										// basics
 										} else {
@@ -415,10 +417,10 @@ $(document).ready(function(){
 		
 		// search presets array to add to the individual select menus
 		if (typeof presets[fieldId] != 'undefined') {
-			// add options to selects
+			// add options to selects (as text, so names can't inject HTML)
 			for (var i in presets[fieldId]) {
-				if (typeof presets[fieldId][i] != 'undefined') {
-					presetSelect.append('<option value="'+ i +'">'+ presets[fieldId][i].name +'</option>');
+				if (presets[fieldId][i]) {
+					presetSelect.append($('<option>').val(i).text(presets[fieldId][i].name));
 				}
 			}
 		
