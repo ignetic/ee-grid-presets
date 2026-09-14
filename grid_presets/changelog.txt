@@ -2,6 +2,12 @@ Changelog for Grid Presets
 ===============================
 
 
+## 2.2.1
+
+- Fixed pasting only the first row when a browser copies each table row as its own table (e.g. selecting rows within a web page table)
+- Pasting uses the tab separated text if it has more rows than the copied HTML
+- Tables nested in a cell keep their rows on separate lines
+
 ## 2.2.0
 
 - Copy rows: a Copy button copies the Grid's rows, with a headings row, as a table and tab separated text

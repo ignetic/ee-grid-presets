@@ -1035,7 +1035,13 @@ $(function() {
 		e.preventDefault();
 
 		var text = clipboard.getData('text/plain') || '';
-		var rows = parseHtmlTable(clipboard.getData('text/html')) || parseText(text);
+		var rows = parseHtmlTable(clipboard.getData('text/html'));
+		var textRows = parseText(text);
+
+		// Use tab separated text if the HTML gave fewer rows (e.g. a partly copied table)
+		if ( ! rows || (text.indexOf('\t') !== -1 && tidyRows(textRows).length > tidyRows(rows).length)) {
+			rows = textRows;
+		}
 
 		$(this).val(text);
 		startPaste($(this).closest('.grid-presets-paste'), rows);
@@ -1597,18 +1603,30 @@ $(function() {
 	// ------------------------------------------------------------------
 	// Parsing
 
-	// The first table in copied HTML, as rows of cell text (merged cells are repeated)
+	// The tables in copied HTML, as rows of cell text (merged cells are repeated).
+	// Browsers can put each copied row in its own table, so all top-level tables are joined in order.
 	function parseHtmlTable(html) {
 		if ( ! html || html.indexOf('<t') === -1 || typeof DOMParser === 'undefined') {
 			return null;
 		}
 
-		var table = new DOMParser().parseFromString(html, 'text/html').querySelector('table');
+		var tables = new DOMParser().parseFromString(html, 'text/html').querySelectorAll('table');
+		var rows = [];
 
-		if ( ! table) {
-			return null;
-		}
+		Array.prototype.forEach.call(tables, function(table) {
+			// Nested tables are part of a cell
+			if (table.parentElement && table.parentElement.closest('table')) {
+				return;
+			}
 
+			rows = rows.concat(tableRows(table));
+		});
+
+		return rows.length ? rows : null;
+	}
+
+	// One table's rows
+	function tableRows(table) {
 		var rows = [];
 
 		Array.prototype.forEach.call(table.rows, function(tr, r) {
@@ -1638,7 +1656,7 @@ $(function() {
 			});
 		});
 
-		return rows.length ? rows : null;
+		return rows;
 	}
 
 	// A cell's text, keeping line breaks (<br>, paragraphs) and dropping formatting
@@ -1649,8 +1667,13 @@ $(function() {
 			br.parentNode.replaceChild(document.createTextNode('\n'), br);
 		});
 
-		Array.prototype.forEach.call(clone.querySelectorAll('p, div, li'), function(block) {
+		Array.prototype.forEach.call(clone.querySelectorAll('p, div, li, tr'), function(block) {
 			block.appendChild(document.createTextNode('\n'));
+		});
+
+		// Cells of a nested table
+		Array.prototype.forEach.call(clone.querySelectorAll('td, th'), function(cell) {
+			cell.appendChild(document.createTextNode(' '));
 		});
 
 		return String(clone.textContent).split('\n').map(function(line) {
