@@ -5,7 +5,7 @@ $(function() {
 		return;
 	}
 
-	// Shared with other features (e.g. pasting rows)
+	// Shared with other features
 	window.GridPresets = {
 		loadRows: loadRows
 	};
@@ -15,12 +15,38 @@ $(function() {
 	// Field types where presets store the checked state of each checkbox/radio input
 	var CHECKABLE_FIELDTYPES = ['checkboxes', 'radio', 'selectable_buttons'];
 
+	// Field types that pasting doesn't fill
+	var UNPASTEABLE_FIELDTYPES = ['file', 'assets', 'channel_images_select'];
+
+	// Rows shown in the paste preview
+	var PREVIEW_ROWS = 8;
+
 	var CONTROLS_HTML = '<div class="grid-presets" style="display:flex; align-items:flex-end; justify-content:flex-end; gap:5px; margin-bottom:-5px;">'
+		+ '<input type="button" class="grid-preset-paste btn button--small button--secondary-alt" value="Paste" title="Paste rows from a copied table, spreadsheet or text" style="margin-right:auto;">'
 		+ '<select class="grid-preset-select button--small" style="border-color:#cbcbda; text-align:left; padding-right:30px !important;"><option value="">- Select A Preset -</option></select> '
 		+ '<input type="button" class="grid-preset-load btn button--small button--secondary-alt" value="Load"> '
 		+ '<input type="button" class="grid-preset-delete btn button--small button--secondary-alt remove" value="Delete"> '
 		+ '<input type="button" class="grid-preset-save btn button--small button--secondary-alt action" value="Save">'
 		+ '</div>';
+
+	var PASTE_PANEL_HTML = '<div class="grid-presets-paste">'
+		+ '<textarea class="grid-presets-paste__input" rows="3" placeholder="Click here and paste (Ctrl+V): a copied table, spreadsheet cells, or tab/space separated text"></textarea>'
+		+ '<div class="grid-presets-paste__preview"></div>'
+		+ '</div>';
+
+	var PASTE_STYLES = '<style>'
+		+ '.grid-presets-paste{margin:12px 0 0;padding:12px;border:1px solid #cbcbda;border-radius:5px}'
+		+ '.grid-presets-paste__input{width:100%;min-height:60px;font-family:monospace;font-size:12px}'
+		+ '.grid-presets-paste__options{display:flex;flex-wrap:wrap;gap:20px;margin:10px 0}'
+		+ '.grid-presets-paste__options label{display:flex;gap:6px;align-items:center;cursor:pointer;font-weight:normal}'
+		+ '.grid-presets-paste__table-wrap{overflow-x:auto}'
+		+ '.grid-presets-paste__table{border-collapse:collapse;width:100%;font-size:12px}'
+		+ '.grid-presets-paste__table th,.grid-presets-paste__table td{border:1px solid #dfe0ef;padding:4px 6px;text-align:left;vertical-align:top;white-space:pre-line}'
+		+ '.grid-presets-paste__table select{width:100%;min-width:120px;font-size:12px}'
+		+ '.grid-presets-paste__unmatched{background:#fde8e8;color:#b3261e}'
+		+ '.grid-presets-paste__summary{margin:10px 0}'
+		+ '.grid-presets-paste__buttons{display:flex;flex-wrap:wrap;gap:6px}'
+		+ '</style>';
 
 	// [fieldId][presetId] => {name, values, labels}
 	var presets = {};
@@ -42,6 +68,8 @@ $(function() {
 	if ( ! fieldIds.length) {
 		return;
 	}
+
+	$('head').append(PASTE_STYLES);
 
 	watchFluidFields();
 
@@ -79,11 +107,59 @@ $(function() {
 		});
 	}
 
+	function getTable($grid) {
+		return $grid.find('.grid-field__table').first();
+	}
+
 	// Content rows (not the blank template row or the "no rows" message)
 	function getRows($grid) {
-		return $grid.find('.grid-field__table').first()
+		return getTable($grid)
 			.children('tbody').children('tr')
 			.not('.grid-blank-row, .no-results');
+	}
+
+	// The Grid's maximum rows (0 = no limit)
+	function maxRows($grid) {
+		var instance = $grid.data('GridInstance');
+		var settings = (instance && instance.settings) || getTable($grid).data('grid-settings') || {};
+		var max = parseInt(settings.grid_max_rows, 10);
+
+		return max > 0 ? max : 0;
+	}
+
+	// Add up to `count` rows, stopping at the Grid's maximum. Returns the number added.
+	function addRows($grid, count) {
+		var instance = $grid.data('GridInstance');
+		var $addButton = $grid.find('.grid-field__footer .js-grid-add-row').first();
+		var max = maxRows($grid);
+		var added = 0;
+
+		while (added < count && ( ! max || getRows($grid).length < max)) {
+			if (instance && typeof instance._addRow === 'function') {
+				instance._addRow();
+			} else if ($addButton.length) {
+				$addButton.trigger('click');
+			} else {
+				break;
+			}
+
+			added++;
+		}
+
+		return added;
+	}
+
+	// Remove all rows, the same way as each row's remove button
+	function removeRows($grid) {
+		getRows($grid).each(function() {
+			var $remove = $(this).find('[rel=remove_row]').first();
+
+			if ($remove.length) {
+				$remove.trigger('click');
+			} else {
+				$(this).remove();
+			}
+		});
 	}
 
 	// Add the preset controls to each Grid (once)
@@ -391,29 +467,33 @@ $(function() {
 	}
 
 	// Add a row for each set of values, then fill them in.
-	// values: [ {columnId: [input values]} ] (older presets are keyed by column position)
-	function loadRows($grid, values, labels) {
+	// values: [ {columnId: [input values]} ] (older presets are keyed by column position),
+	// or with options.pasted, [ {columnId: 'pasted text'} ].
+	// options.replace removes the existing rows first. Stops at the Grid's maximum rows.
+	function loadRows($grid, values, labels, options) {
 		var rowKeys = Object.keys(values || {});
-		var existingRows = getRows($grid).length;
-		var $addButton = $grid.find('.grid-field__footer .js-grid-add-row').first();
 
-		if ( ! rowKeys.length || ! $addButton.length) {
+		options = options || {};
+		labels = labels || {};
+
+		if ( ! rowKeys.length) {
 			return;
 		}
 
 		pauseValidation();
 
-		$.each(rowKeys, function() {
-			$addButton.trigger('click');
-		});
+		if (options.replace) {
+			removeRows($grid);
+		}
+
+		var existingRows = getRows($grid).length;
+		var added = addRows($grid, rowKeys.length);
 
 		// Wait for the new rows' fieldtypes to initialise
 		setTimeout(function() {
 			try {
-				getRows($grid).slice(existingRows).each(function(irow) {
-					if (irow < rowKeys.length) {
-						fillRow($(this), values[rowKeys[irow]], labels || {});
-					}
+				getRows($grid).slice(existingRows, existingRows + added).each(function(irow) {
+					fillRow($(this), values[rowKeys[irow]], labels, options.pasted);
 				});
 			} finally {
 				resumeValidation();
@@ -421,7 +501,7 @@ $(function() {
 		}, 0);
 	}
 
-	function fillRow($row, value, labels) {
+	function fillRow($row, value, labels, pasted) {
 		if (typeof value !== 'object' || value === null) {
 			return;
 		}
@@ -431,6 +511,7 @@ $(function() {
 
 		$row.children('td[data-fieldtype]').each(function(icol) {
 			var $cell = $(this);
+			var fieldtype = $cell.data('fieldtype');
 			var cellValue = value[keyedByPosition ? icol : $cell.data('column-id')];
 
 			// Column isn't in this preset (e.g. added after the preset was saved)
@@ -438,7 +519,16 @@ $(function() {
 				return;
 			}
 
-			fillCell($cell, $cell.data('fieldtype'), cellValue, labels);
+			// Pasted text: match it to this cell's options and inputs
+			if (pasted) {
+				cellValue = resolvePasted($cell, fieldtype, cellValue, labels).value;
+
+				if (typeof cellValue === 'undefined') {
+					return;
+				}
+			}
+
+			fillCell($cell, fieldtype, cellValue, labels);
 		});
 	}
 
@@ -548,7 +638,7 @@ $(function() {
 			// A value missing from the options would render empty, so leave those as they are
 			var props = JSON.parse(window.atob($(this).data('dropdownReact')));
 
-			if ( ! hasDropdownItem(props.items, value)) {
+			if ( ! findItem(props.items, value)) {
 				return;
 			}
 
@@ -556,19 +646,6 @@ $(function() {
 			ReactDOM.unmountComponentAtNode(this);
 			Dropdown.renderFields($(this).parent());
 		});
-	}
-
-	function hasDropdownItem(items, value) {
-		var found = false;
-
-		$.each(items || [], function(i, item) {
-			if (item && (item.value == value || hasDropdownItem(item.children, value))) {
-				found = true;
-				return false;
-			}
-		});
-
-		return found;
 	}
 
 	// Inputs in the order they were saved
@@ -675,9 +752,7 @@ $(function() {
 		}
 
 		var props = JSON.parse(window.atob($field.data('relationshipReact')));
-		var items = Array.isArray(props.items) ? props.items : $.map(props.items || {}, function(item) {
-			return item;
-		});
+		var items = listItems(props.items);
 		var selected = [];
 
 		$.each(entryIds, function(i, entryId) {
@@ -712,6 +787,764 @@ $(function() {
 
 		ReactDOM.unmountComponentAtNode($field[0]);
 		ReactDOM.render(React.createElement(Relationship, props, null), $field[0]);
+	}
+
+
+	// ------------------------------------------------------------------
+	// Paste rows
+
+	// Open/close the paste panel
+	$(document).on('click', '.grid-presets .grid-preset-paste', function() {
+		var $controls = $(this).closest('.grid-presets');
+
+		if ($controls.data('pastePanel')) {
+			closePastePanel($controls);
+			return;
+		}
+
+		var $panel = $(PASTE_PANEL_HTML).insertAfter($controls).data('controls', $controls);
+
+		$controls.data('pastePanel', $panel);
+		$panel.find('.grid-presets-paste__input').trigger('focus');
+	});
+
+	function closePastePanel($controls) {
+		var $panel = $controls.data('pastePanel');
+
+		if ($panel) {
+			$panel.remove();
+		}
+
+		$controls.removeData('pastePanel');
+	}
+
+	// Pasted content: prefer a copied table (HTML), otherwise the plain text
+	$(document).on('paste', '.grid-presets-paste__input', function(e) {
+		var clipboard = e.originalEvent && e.originalEvent.clipboardData;
+
+		if ( ! clipboard) {
+			return;
+		}
+
+		e.preventDefault();
+
+		var text = clipboard.getData('text/plain') || '';
+		var rows = parseHtmlTable(clipboard.getData('text/html')) || parseText(text);
+
+		$(this).val(text);
+		startPaste($(this).closest('.grid-presets-paste'), rows);
+	});
+
+	// Typed or edited text
+	$(document).on('input', '.grid-presets-paste__input', function() {
+		startPaste($(this).closest('.grid-presets-paste'), parseText(this.value));
+	});
+
+	// Options: headings / swap rows and columns
+	$(document).on('change', '.grid-presets-paste__options input', function() {
+		var $panel = $(this).closest('.grid-presets-paste');
+		var state = $panel.data('state');
+		var option = $(this).data('option');
+
+		state[option] = this.checked;
+
+		// After swapping, check again whether the (new) first row is headings
+		autoMap(state, option === 'swapped');
+		renderPaste($panel);
+	});
+
+	// Column mapping
+	$(document).on('change', '.grid-presets-paste__map', function() {
+		var $panel = $(this).closest('.grid-presets-paste');
+
+		$panel.data('state').mapping[$(this).data('column')] = parseInt($(this).val(), 10);
+		renderPaste($panel);
+	});
+
+	// Add / replace / cancel
+	$(document).on('click', '.grid-presets-paste__buttons [data-action]', function() {
+		var $panel = $(this).closest('.grid-presets-paste');
+		var $controls = $panel.data('controls');
+		var action = $(this).data('action');
+
+		if (action === 'cancel') {
+			closePastePanel($controls);
+			return;
+		}
+
+		var state = $panel.data('state');
+		var values = [];
+
+		$.each(pasteBody(state), function(r, row) {
+			var rowValues = {};
+			var hasValue = false;
+
+			$.each(state.columns, function(i, column) {
+				var source = state.mapping[i];
+
+				if (source >= 0 && isPasteable(column) && row[source] !== undefined && row[source] !== '') {
+					rowValues[column.id] = row[source];
+					hasValue = true;
+				}
+			});
+
+			if (hasValue) {
+				values.push(rowValues);
+			}
+		});
+
+		loadRows($controls.data('grid'), values, {}, {pasted: true, replace: action === 'replace'});
+		closePastePanel($controls);
+	});
+
+	function startPaste($panel, rows) {
+		var $grid = $panel.data('controls').data('grid');
+		var state = {
+			rows: tidyRows(rows),
+			columns: getColumns($grid),
+			headings: false,
+			swapped: false,
+			mapping: []
+		};
+
+		// Spec-sheet layout (the Grid's column names down the first column): swap rows and columns
+		var firstColumn = state.rows.map(function(row) {
+			return row[0];
+		});
+
+		if (countLabelMatches(firstColumn, state.columns) > Math.max(0, countLabelMatches(state.rows[0] || [], state.columns))) {
+			state.swapped = true;
+		}
+
+		autoMap(state, true);
+
+		$panel.data('state', state);
+		renderPaste($panel);
+	}
+
+	// Default mapping: by heading when the first row names the Grid's columns,
+	// otherwise by position (as many columns as were pasted)
+	function autoMap(state, detectHeadings) {
+		var data = pasteData(state);
+		var first = data[0] || [];
+
+		if (detectHeadings) {
+			state.headings = countLabelMatches(first, state.columns) > 0;
+		}
+
+		state.mapping = state.columns.map(function(column, i) {
+			if ( ! isPasteable(column)) {
+				return -1;
+			}
+
+			if (state.headings) {
+				return indexOfText(first, column.label);
+			}
+
+			return i < first.length ? i : -1;
+		});
+	}
+
+	// Rows after swapping (if chosen)
+	function pasteData(state) {
+		return state.swapped ? transpose(state.rows) : state.rows;
+	}
+
+	// Rows to paste (without the headings row)
+	function pasteBody(state) {
+		var data = pasteData(state);
+
+		return state.headings ? data.slice(1) : data;
+	}
+
+	function renderPaste($panel) {
+		var state = $panel.data('state');
+		var $grid = $panel.data('controls').data('grid');
+		var $preview = $panel.find('.grid-presets-paste__preview').empty();
+		var data = pasteData(state);
+		var body = pasteBody(state);
+		var width = data.length ? data[0].length : 0;
+
+		if ( ! body.length) {
+			$preview.append($('<p class="grid-presets-paste__summary">').text('Nothing to paste yet: no rows found.'));
+			return;
+		}
+
+		// Options
+		$preview.append(
+			$('<div class="grid-presets-paste__options">')
+				.append(pasteOption('headings', 'First row is headings', state.headings))
+				.append(pasteOption('swapped', 'Swap rows and columns', state.swapped))
+		);
+
+		// Grid columns, with the pasted column that fills each
+		var $table = $('<table class="grid-presets-paste__table">');
+		var $labels = $('<tr>');
+		var $mapping = $('<tr>');
+
+		$.each(state.columns, function(i, column) {
+			var $cell = $('<td>');
+
+			$labels.append($('<th>').text(column.label));
+
+			if ( ! isPasteable(column)) {
+				$cell.append($('<em>').text('Not supported'));
+			} else {
+				var $select = $('<select class="grid-presets-paste__map">').attr('data-column', i);
+
+				$select.append($('<option>').val(-1).text('- Skip -'));
+
+				for (var s = 0; s < width; s++) {
+					var sample = state.headings ? data[0][s] : body[0][s];
+					$select.append($('<option>').val(s).text('Column ' + (s + 1) + (sample ? ': ' + truncate(sample, 24) : '')));
+				}
+
+				$select.val(String(state.mapping[i]));
+				$cell.append($select);
+			}
+
+			$mapping.append($cell);
+		});
+
+		$table.append($('<thead>').append($labels).append($mapping));
+
+		// Preview rows (every row is checked for matches)
+		var $tbody = $('<tbody>');
+		var unmatched = 0;
+
+		$.each(body, function(r, row) {
+			var $tr = $('<tr>');
+
+			$.each(state.columns, function(i, column) {
+				var source = state.mapping[i];
+				var text = source >= 0 ? (row[source] || '') : '';
+				var $td = $('<td>');
+
+				if (text !== '') {
+					var result = resolvePasted(column.$template, column.fieldtype, text, {});
+
+					$td.text(text);
+
+					if ( ! result.matched) {
+						unmatched++;
+						$td.addClass('grid-presets-paste__unmatched').attr('title', 'No matching option: this will be left empty');
+					}
+				}
+
+				$tr.append($td);
+			});
+
+			if (r < PREVIEW_ROWS) {
+				$tbody.append($tr);
+			}
+		});
+
+		$table.append($tbody);
+		$preview.append($('<div class="grid-presets-paste__table-wrap">').append($table));
+
+		// Summary
+		var notes = [body.length + (body.length == 1 ? ' row' : ' rows') + ' to paste.'];
+		var max = maxRows($grid);
+		var existing = getRows($grid).length;
+
+		if (body.length > PREVIEW_ROWS) {
+			notes.push('The first ' + PREVIEW_ROWS + ' are shown.');
+		}
+
+		if (unmatched) {
+			notes.push(unmatched + (unmatched == 1 ? ' value has' : ' values have') + ' no matching option (highlighted) and will be left empty.');
+		}
+
+		if (max && existing + body.length > max) {
+			notes.push('This Grid allows ' + max + ' rows, so adding after the existing rows pastes ' + Math.max(0, max - existing) + '.');
+		}
+
+		if (max && body.length > max) {
+			notes.push('Replacing pastes the first ' + max + '.');
+		}
+
+		$preview.append($('<p class="grid-presets-paste__summary">').text(notes.join(' ')));
+
+		$preview.append(
+			$('<div class="grid-presets-paste__buttons">')
+				.append(pasteButton('add', 'Add after existing rows', 'button--primary'))
+				.append(pasteButton('replace', 'Replace existing rows', 'button--default'))
+				.append(pasteButton('cancel', 'Cancel', 'button--default'))
+		);
+	}
+
+	// No name attributes: these sit inside the publish form and mustn't be submitted
+	function pasteOption(option, text, checked) {
+		return $('<label>')
+			.append($('<input type="checkbox">').attr('data-option', option).prop('checked', checked))
+			.append(document.createTextNode(text));
+	}
+
+	function pasteButton(action, text, style) {
+		return $('<button type="button" class="button button--small">').addClass(style).attr('data-action', action).text(text);
+	}
+
+	// The Grid's columns: ID, fieldtype, label, and the blank template cell (for matching options)
+	function getColumns($grid) {
+		var $table = getTable($grid);
+		var $cells = $table.children('tbody').children('tr.grid-blank-row').first().children('td[data-fieldtype]');
+		var $headings = $table.children('thead').find('th').not('.row-counter-column, .hidden, .check-ctrl, .grid-field__column-remove');
+
+		return $cells.map(function(i) {
+			var label = ($headings.length === $cells.length) ? headingText($headings.eq(i)) : '';
+
+			return {
+				id: $(this).data('column-id') || i,
+				fieldtype: $(this).data('fieldtype'),
+				label: label || ('Column ' + (i + 1)),
+				$template: $(this)
+			};
+		}).get();
+	}
+
+	// A column heading's label, without its instructions or name badge
+	function headingText($heading) {
+		var $clone = $heading.clone();
+
+		$clone.find('.grid-instruct').remove();
+		$clone.children().not('.required, a').remove();
+
+		return $clone.text().replace(/\s+/g, ' ').trim();
+	}
+
+	function isPasteable(column) {
+		return UNPASTEABLE_FIELDTYPES.indexOf(column.fieldtype) === -1;
+	}
+
+	function countLabelMatches(cells, columns) {
+		var count = 0;
+
+		$.each(columns, function(i, column) {
+			if (isPasteable(column) && indexOfText(cells, column.label) !== -1) {
+				count++;
+			}
+		});
+
+		return count;
+	}
+
+	// Match pasted text to a cell: options for selects, dropdowns, checkboxes, radios, toggles
+	// and relationships (by value or label); text for the rest.
+	// Returns {value, matched}: value is in the preset shape for fillCell (undefined to skip).
+	function resolvePasted($cell, fieldtype, text, labels) {
+		text = String(text).trim();
+
+		if (fieldtype == 'relationship') {
+			return resolveRelationship($cell, text, labels);
+		}
+
+		if (fieldtype == 'toggle') {
+			var on = /^(1|y|yes|on|true)$/i.test(text);
+			var off = /^(0|n|no|off|false)$/i.test(text);
+
+			return {value: (on || off) ? [on ? '1' : '0'] : undefined, matched: on || off};
+		}
+
+		if (CHECKABLE_FIELDTYPES.indexOf(fieldtype) !== -1) {
+			var tokens = splitList(text);
+			var found = [];
+			var values = [];
+
+			$cell.find('input[type=checkbox], input[type=radio]').each(function() {
+				var token = findToken(tokens, [this.value, $(this).closest('label').text()]);
+
+				// A radio takes one option
+				if (token !== null && (this.type === 'checkbox' || ! found.length)) {
+					values.push(this.value);
+					found.push(token);
+				} else {
+					values.push(null);
+				}
+			});
+
+			return {value: found.length ? values : undefined, matched: found.length > 0 && found.length === tokens.length};
+		}
+
+		// Other fields: fill the main input
+		var $inputs = $cell.find('input, textarea, select');
+		var $dropdown = $cell.find('div[data-dropdown-react]').first();
+		var $main;
+		var mainValue;
+		var matched = true;
+
+		if ($dropdown.length) {
+			// EE's React dropdown: match its items (its hidden input only exists once rendered)
+			var item = findItem(reactProps($dropdown, 'dropdownReact').items, text);
+
+			$main = $dropdown.find('input[type=hidden]').first();
+			mainValue = item ? item.value : undefined;
+			matched = !! item;
+
+		} else {
+			$main = $inputs.filter('select, textarea, input:not([type]), input[type=text], input[type=number], input[type=url], input[type=email], input[type=tel], input[type=search]').first();
+
+			if ( ! $main.length) {
+				return {value: undefined, matched: false};
+			}
+
+			if ($main.is('select')) {
+				var multiple = $main.prop('multiple');
+				var options = $main.find('option').map(function() {
+					return {value: this.value, label: $(this).text()};
+				}).get();
+				var chosen = [];
+
+				$.each(multiple ? splitList(text) : [text], function(i, pick) {
+					var option = findItem(options, pick);
+
+					if (option) {
+						chosen.push(option.value);
+					} else if (allowsNewOptions($main, fieldtype)) {
+						chosen.push(pick);
+					} else {
+						matched = false;
+					}
+				});
+
+				mainValue = chosen.length ? (multiple ? chosen : chosen[0]) : undefined;
+
+			} else if ($main.is('input[type=number]')) {
+				matched = text !== '' && ! isNaN(Number(text));
+				mainValue = matched ? text : undefined;
+
+			} else if (fieldtype == 'rte') {
+				mainValue = textToHtml(text);
+
+			} else if ($main.is('textarea')) {
+				mainValue = text;
+
+			} else {
+				mainValue = text.replace(/\s*\n\s*/g, ' ');
+			}
+		}
+
+		var index = $inputs.index($main);
+
+		if (typeof mainValue === 'undefined') {
+			return {value: undefined, matched: false};
+		}
+
+		if (index < 0) {
+			return {value: undefined, matched: matched};
+		}
+
+		var value = [];
+		value[index] = mainValue;
+
+		return {value: value, matched: matched};
+	}
+
+	// Relationship entries by title (or entry ID), from the field's own entry list
+	function resolveRelationship($cell, text, labels) {
+		var $field = $cell.find('div[data-relationship-react]').first();
+		var props = $field.length ? reactProps($field, 'relationshipReact') : {};
+		var items = listItems(props.items);
+
+		// Titles can contain commas, so try the whole text as one title first
+		var tokens = findItem(items, text) ? [text] : splitList(text);
+		var entryIds = [];
+		var matched = true;
+
+		$.each(tokens, function(i, token) {
+			var item = findItem(items, token);
+
+			if (item) {
+				entryIds.push(item.value);
+				labels[item.value] = item.label;
+			} else if (/^\d+$/.test(token)) {
+				entryIds.push(token);
+			} else {
+				matched = false;
+			}
+		});
+
+		if ( ! props.multi) {
+			entryIds = entryIds.slice(0, 1);
+		}
+
+		return {value: entryIds.length ? entryIds : undefined, matched: matched && entryIds.length > 0};
+	}
+
+	// MX Select Plus can add new options (when the field allows it)
+	function allowsNewOptions($select, fieldtype) {
+		var flag = String($select.data('no'));
+
+		return fieldtype == 'mx_select_plus' && ['1', 'y', 'yes', 'true'].indexOf(flag.toLowerCase()) !== -1;
+	}
+
+	// Decoded props of an EE React field (cached on the element)
+	function reactProps($field, key) {
+		var props = $field.data('gridPresetsProps');
+
+		if ( ! props) {
+			try {
+				props = JSON.parse(window.atob($field.data(key)));
+			} catch (e) {
+				props = {};
+			}
+
+			$field.data('gridPresetsProps', props);
+		}
+
+		return props;
+	}
+
+	function listItems(items) {
+		return Array.isArray(items) ? items : $.map(items || {}, function(item) {
+			return item;
+		});
+	}
+
+	// Find an item ({value, label}, with optional children) by value or label
+	function findItem(items, text) {
+		var found = null;
+
+		$.each(items || [], function(i, item) {
+			if ( ! item) {
+				return;
+			}
+
+			if (sameText(item.value, text) || sameText(item.label, text)) {
+				found = item;
+				return false;
+			}
+
+			found = findItem(item.children, text);
+
+			if (found) {
+				return false;
+			}
+		});
+
+		return found;
+	}
+
+	// The first token that matches any of the candidates
+	function findToken(tokens, candidates) {
+		for (var t = 0; t < tokens.length; t++) {
+			for (var c = 0; c < candidates.length; c++) {
+				if (sameText(tokens[t], candidates[c])) {
+					return tokens[t];
+				}
+			}
+		}
+
+		return null;
+	}
+
+	function indexOfText(cells, text) {
+		for (var i = 0; i < cells.length; i++) {
+			if (cells[i] !== '' && sameText(cells[i], text)) {
+				return i;
+			}
+		}
+
+		return -1;
+	}
+
+	function sameText(a, b) {
+		return normaliseText(a) === normaliseText(b);
+	}
+
+	function normaliseText(text) {
+		return String(text === null || typeof text === 'undefined' ? '' : text).replace(/\s+/g, ' ').trim().toLowerCase();
+	}
+
+	// "a, b; c" or one per line
+	function splitList(text) {
+		return String(text).split(/\s*[\n,;|]\s*/).filter(function(part) {
+			return part !== '';
+		});
+	}
+
+	function truncate(text, length) {
+		text = String(text).replace(/\s+/g, ' ');
+
+		return text.length > length ? text.substr(0, length - 1) + '…' : text;
+	}
+
+	function textToHtml(text) {
+		return '<p>' + escapeHtml(text).replace(/\n/g, '<br>') + '</p>';
+	}
+
+	function escapeHtml(value) {
+		return String(value === null || typeof value === 'undefined' ? '' : value).replace(/[&<>"']/g, function(chr) {
+			return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[chr];
+		});
+	}
+
+
+	// ------------------------------------------------------------------
+	// Parsing
+
+	// The first table in copied HTML, as rows of cell text (merged cells are repeated)
+	function parseHtmlTable(html) {
+		if ( ! html || html.indexOf('<t') === -1 || typeof DOMParser === 'undefined') {
+			return null;
+		}
+
+		var table = new DOMParser().parseFromString(html, 'text/html').querySelector('table');
+
+		if ( ! table) {
+			return null;
+		}
+
+		var rows = [];
+
+		Array.prototype.forEach.call(table.rows, function(tr, r) {
+			var c = 0;
+
+			rows[r] = rows[r] || [];
+
+			Array.prototype.forEach.call(tr.cells, function(td) {
+				var text = cellText(td);
+				var colspan = Math.max(1, parseInt(td.getAttribute('colspan'), 10) || 1);
+				var rowspan = Math.max(1, parseInt(td.getAttribute('rowspan'), 10) || 1);
+
+				// Skip places already filled by a cell spanning rows above
+				while (rows[r][c] !== undefined) {
+					c++;
+				}
+
+				for (var dr = 0; dr < rowspan; dr++) {
+					rows[r + dr] = rows[r + dr] || [];
+
+					for (var dc = 0; dc < colspan; dc++) {
+						rows[r + dr][c + dc] = text;
+					}
+				}
+
+				c += colspan;
+			});
+		});
+
+		return rows.length ? rows : null;
+	}
+
+	// A cell's text, keeping line breaks (<br>, paragraphs) and dropping formatting
+	function cellText(td) {
+		var clone = td.cloneNode(true);
+
+		Array.prototype.forEach.call(clone.querySelectorAll('br'), function(br) {
+			br.parentNode.replaceChild(document.createTextNode('\n'), br);
+		});
+
+		Array.prototype.forEach.call(clone.querySelectorAll('p, div, li'), function(block) {
+			block.appendChild(document.createTextNode('\n'));
+		});
+
+		return String(clone.textContent).split('\n').map(function(line) {
+			return line.replace(/[\s ]+/g, ' ').trim();
+		}).filter(function(line) {
+			return line !== '';
+		}).join('\n');
+	}
+
+	// Tab separated text (spreadsheets), or columns separated by 2+ spaces
+	function parseText(text) {
+		text = String(text || '').replace(/\r\n?/g, '\n');
+
+		if (text.indexOf('\t') !== -1) {
+			return parseTabbed(text);
+		}
+
+		// Single spaces are part of values ("Antique Brass")
+		return text.split('\n').map(function(line) {
+			return line.trim().split(/(?: | ){2,}/);
+		});
+	}
+
+	// Tab separated, where spreadsheets quote cells containing tabs, line breaks or quotes
+	function parseTabbed(text) {
+		var rows = [];
+		var row = [];
+		var cell = '';
+		var quoted = false;
+
+		for (var i = 0; i < text.length; i++) {
+			var chr = text.charAt(i);
+
+			if (quoted) {
+				if (chr === '"' && text.charAt(i + 1) === '"') {
+					cell += '"';
+					i++;
+				} else if (chr === '"') {
+					quoted = false;
+				} else {
+					cell += chr;
+				}
+			} else if (chr === '"' && cell === '') {
+				quoted = true;
+			} else if (chr === '\t') {
+				row.push(cell);
+				cell = '';
+			} else if (chr === '\n') {
+				row.push(cell);
+				rows.push(row);
+				row = [];
+				cell = '';
+			} else {
+				cell += chr;
+			}
+		}
+
+		row.push(cell);
+		rows.push(row);
+
+		return rows;
+	}
+
+	// Trim cells, drop empty rows and trailing empty columns, and make rows the same width
+	function tidyRows(rows) {
+		var width = 0;
+
+		rows = (rows || []).map(function(row) {
+			return (row || []).map(function(cell) {
+				return String(cell === null || typeof cell === 'undefined' ? '' : cell).trim();
+			});
+		}).filter(function(row) {
+			return row.some(function(cell) {
+				return cell !== '';
+			});
+		});
+
+		rows.forEach(function(row) {
+			var used = row.length;
+
+			while (used > 0 && row[used - 1] === '') {
+				used--;
+			}
+
+			width = Math.max(width, used);
+		});
+
+		return rows.map(function(row) {
+			row = row.slice(0, width);
+
+			while (row.length < width) {
+				row.push('');
+			}
+
+			return row;
+		});
+	}
+
+	function transpose(rows) {
+		var width = rows.length ? rows[0].length : 0;
+		var result = [];
+
+		for (var c = 0; c < width; c++) {
+			result.push(rows.map(function(row) {
+				return row[c];
+			}));
+		}
+
+		return result;
 	}
 
 });

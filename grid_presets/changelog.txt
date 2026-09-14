@@ -2,6 +2,17 @@ Changelog for Grid Presets
 ===============================
 
 
+## 2.1.0
+
+- Paste rows: a Paste button under each Grid takes a copied table (web page, Excel, Google Sheets) or tab/space separated text
+  - Preview before pasting, with "Add after existing rows" or "Replace existing rows"
+  - Columns map by position, or by name when the first row matches the Grid's column labels; each column's source can be changed
+  - "Swap rows and columns" for spec-sheet layouts (switched on automatically when the first column holds the Grid's column labels)
+  - Matches values to options: selects, EE dropdowns, MX Select Plus, checkboxes, radios, selectable buttons, toggles, and relationships by entry title or ID
+  - Values with no matching option are highlighted and left empty
+  - Merged cells and line breaks in cells are kept
+- Loading a preset (and pasting) now stops at the Grid's maximum rows
+
 ## 2.0.0
 
 Requires ExpressionEngine 7. Use 1.4.4 for EE2-EE6.

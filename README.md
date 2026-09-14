@@ -39,8 +39,22 @@ Preset buttons appear under each Grid and File Grid field on the entry publish f
 - **Save** – with no preset selected, saves the Grid's rows as a new preset; with a preset selected, overwrites it
 - **Load** – adds the preset's rows to the Grid
 - **Delete** – deletes the selected preset
+- **Paste** – pastes rows copied from a web page table, Excel, Google Sheets, or tab/space separated text
 
 Presets belong to a field, so they can be loaded into the same field on any entry.
+
+
+Pasting rows
+------------
+
+Click **Paste**, then paste (Ctrl+V / Cmd+V) into the box. A preview shows how the rows will fill the Grid:
+
+- Columns are filled by position, or by name when the first row matches the Grid's column labels. Choose a different source for any column from its dropdown.
+- **Swap rows and columns** turns a spec sheet (names down the first column, one product per column) into rows.
+- Values are matched to options (selects, dropdowns, MX Select Plus, checkboxes, radios, toggles, relationships by entry title). Values with no match are highlighted and left empty.
+- Choose **Add after existing rows** or **Replace existing rows**. Pasting stops at the Grid's maximum rows.
+
+Tab separated text is split on tabs; otherwise columns need at least two spaces between them, so values like "Antique Brass" stay together. File, Assets and Channel Images columns aren't filled by pasting.
 
 
 Supported column types
