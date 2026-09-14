@@ -1140,16 +1140,21 @@ $(function() {
 		var data = pasteData(state);
 		var first = data[0] || [];
 
+		var namedHeadings = countLabelMatches(first, state.columns) > 0;
+
 		if (detectHeadings) {
-			state.headings = countLabelMatches(first, state.columns) > 0;
+			state.headings = namedHeadings;
 		}
+
+		// Headings that don't name any of the Grid's columns just mean "skip the first row"
+		var byHeading = state.headings && namedHeadings;
 
 		state.mapping = state.columns.map(function(column, i) {
 			if ( ! isPasteable(column)) {
 				return -1;
 			}
 
-			if (state.headings) {
+			if (byHeading) {
 				return indexOfText(first, column.label);
 			}
 

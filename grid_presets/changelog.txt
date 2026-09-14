@@ -2,6 +2,10 @@ Changelog for Grid Presets
 ===============================
 
 
+## 2.2.2
+
+- Fixed "First row is headings" emptying the preview: when the headings don't name any of the Grid's columns, it now just skips the first row and keeps the columns in order
+
 ## 2.2.1
 
 - Fixed pasting only the first row when a browser copies each table row as its own table (e.g. selecting rows within a web page table)
