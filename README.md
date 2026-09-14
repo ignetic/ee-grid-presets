@@ -39,6 +39,7 @@ Preset buttons appear under each Grid and File Grid field on the entry publish f
 - **Save** – with no preset selected, saves the Grid's rows as a new preset; with a preset selected, overwrites it
 - **Load** – adds the preset's rows to the Grid
 - **Delete** – deletes the selected preset
+- **Copy** – copies the Grid's rows (with a headings row), to paste into a spreadsheet or into the same Grid on another entry
 - **Paste** – pastes rows copied from a web page table, Excel, Google Sheets, or tab/space separated text
 
 Presets belong to a field, so they can be loaded into the same field on any entry.

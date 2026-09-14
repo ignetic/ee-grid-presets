@@ -22,6 +22,7 @@ $(function() {
 	var PREVIEW_ROWS = 8;
 
 	var CONTROLS_HTML = '<div class="grid-presets" style="display:flex; align-items:flex-end; justify-content:flex-end; gap:5px; margin-bottom:-5px;">'
+		+ '<input type="button" class="grid-preset-copy btn button--small button--secondary-alt" value="Copy" title="Copy the rows, to paste into a spreadsheet or another Grid">'
 		+ '<input type="button" class="grid-preset-paste btn button--small button--secondary-alt" value="Paste" title="Paste rows from a copied table, spreadsheet or text" style="margin-right:auto;">'
 		+ '<select class="grid-preset-select button--small" style="border-color:#cbcbda; text-align:left; padding-right:30px !important;"><option value="">- Select A Preset -</option></select> '
 		+ '<input type="button" class="grid-preset-load btn button--small button--secondary-alt" value="Load"> '
@@ -791,6 +792,211 @@ $(function() {
 
 
 	// ------------------------------------------------------------------
+	// Copy rows
+
+	// Copy the Grid's rows (with a headings row) as an HTML table and tab separated text,
+	// so they paste into spreadsheets, or back into a Grid (matched by column name)
+	$(document).on('click', '.grid-presets .grid-preset-copy', function() {
+		var $button = $(this);
+		var copied = copyRows($button.closest('.grid-presets').data('grid'));
+
+		if ( ! copied.count) {
+			alert('There are no rows to copy.');
+			return false;
+		}
+
+		writeClipboard(copied.html, copied.text).then(function() {
+			flashButton($button, 'Copied ' + copied.count + (copied.count == 1 ? ' row' : ' rows'));
+		}, function() {
+			alert('The rows could not be copied to the clipboard.');
+		});
+	});
+
+	function copyRows($grid) {
+		var columns = getColumns($grid);
+		var headings = columns.map(function(column) {
+			return column.label;
+		});
+		var rows = [];
+
+		getRows($grid).each(function() {
+			var $cells = $(this).children('td[data-fieldtype]');
+
+			rows.push(columns.map(function(column, i) {
+				var $cell = $cells.eq(i);
+
+				return $cell.length ? copyText($cell, column.fieldtype) : '';
+			}));
+		});
+
+		var text = [headings].concat(rows).map(function(row) {
+			return row.map(tabbedCell).join('\t');
+		}).join('\n');
+
+		// Excel keeps <br> in the same cell only with this style
+		var html = '<table><thead><tr>'
+			+ headings.map(function(heading) {
+				return '<th>' + escapeHtml(heading) + '</th>';
+			}).join('')
+			+ '</tr></thead><tbody>'
+			+ rows.map(function(row) {
+				return '<tr>' + row.map(function(value) {
+					return '<td>' + escapeHtml(value).replace(/\n/g, '<br style="mso-data-placement:same-cell;">') + '</td>';
+				}).join('') + '</tr>';
+			}).join('')
+			+ '</tbody></table>';
+
+		return {text: text, html: html, count: rows.length};
+	}
+
+	// A cell's value as readable text (the reverse of pasting): option labels rather than values
+	function copyText($cell, fieldtype) {
+		if (fieldtype == 'relationship') {
+			var $field = $cell.find('div[data-relationship-react]').first();
+			var titles = [];
+
+			// One title per line (titles can contain commas)
+			$field.find('li.list-item .list-item__title').each(function() {
+				titles.push(String($(this).contents().first().text()).trim());
+			});
+
+			if ( ! titles.length) {
+				$field.find('input[type=hidden]').each(function() {
+					if (this.value !== '') {
+						titles.push(this.value);
+					}
+				});
+			}
+
+			return titles.join('\n');
+		}
+
+		if (fieldtype == 'toggle') {
+			var $toggle = $cell.find('.toggle-btn');
+
+			return $toggle.length ? ($toggle.hasClass('on') ? 'Yes' : 'No') : '';
+		}
+
+		if (CHECKABLE_FIELDTYPES.indexOf(fieldtype) !== -1) {
+			var checked = [];
+
+			$cell.find('input[type=checkbox], input[type=radio]').each(function() {
+				if (this.checked) {
+					checked.push(optionLabel(this) || this.value);
+				}
+			});
+
+			return checked.join(', ');
+		}
+
+		// EE's React dropdown: the selected item's label
+		var $dropdown = $cell.find('div[data-dropdown-react]').first();
+
+		if ($dropdown.length) {
+			var value = $dropdown.find('input[type=hidden]').first().val() || '';
+			var item = value !== '' ? findItem(reactProps($dropdown, 'dropdownReact').items, value) : null;
+
+			return item ? String(item.label) : value;
+		}
+
+		var $select = $cell.find('select').first();
+
+		if ($select.length) {
+			return $select.find('option').filter(function() {
+				return this.selected && this.value !== '';
+			}).map(function() {
+				return $(this).text().replace(/\s+/g, ' ').trim();
+			}).get().join(', ');
+		}
+
+		var $textarea = $cell.find('textarea').first();
+
+		if ($textarea.length) {
+			return fieldtype == 'rte' ? htmlToText($textarea.val()) : String($textarea.val());
+		}
+
+		// Text inputs, otherwise a stored value (e.g. a file)
+		var $input = $cell.find('input:not([type]), input[type=text], input[type=number], input[type=url], input[type=email], input[type=tel], input[type=search]').first();
+
+		if ( ! $input.length) {
+			$input = $cell.find('input[type=hidden]').filter(function() {
+				return this.value !== '';
+			}).first();
+		}
+
+		return $input.length ? String($input.val()) : '';
+	}
+
+	function optionLabel(input) {
+		return $(input).closest('label').text().replace(/\s+/g, ' ').trim();
+	}
+
+	// Rich text as plain text with line breaks (parsed without running anything in it)
+	function htmlToText(html) {
+		if ( ! html || typeof DOMParser === 'undefined') {
+			return String(html || '');
+		}
+
+		return cellText(new DOMParser().parseFromString(html, 'text/html').body);
+	}
+
+	// Spreadsheet quoting for cells containing tabs, line breaks or quotes
+	function tabbedCell(value) {
+		value = String(value);
+
+		return /[\t\n"]/.test(value) ? '"' + value.replace(/"/g, '""') + '"' : value;
+	}
+
+	// Both formats via the copy event (within the click); the Clipboard API as a fallback
+	function writeClipboard(html, text) {
+		var copied = false;
+		var onCopy = function(e) {
+			e.clipboardData.setData('text/html', html);
+			e.clipboardData.setData('text/plain', text);
+			e.preventDefault();
+			copied = true;
+		};
+
+		document.addEventListener('copy', onCopy);
+
+		try {
+			document.execCommand('copy');
+		} catch (e) {
+			copied = false;
+		}
+
+		document.removeEventListener('copy', onCopy);
+
+		if (copied) {
+			return Promise.resolve();
+		}
+
+		if (navigator.clipboard && window.ClipboardItem) {
+			return navigator.clipboard.write([new ClipboardItem({
+				'text/html': new Blob([html], {type: 'text/html'}),
+				'text/plain': new Blob([text], {type: 'text/plain'})
+			})]);
+		}
+
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			return navigator.clipboard.writeText(text);
+		}
+
+		return Promise.reject();
+	}
+
+	function flashButton($button, text) {
+		var label = $button.data('label') || $button.val();
+
+		$button.data('label', label).val(text);
+		clearTimeout($button.data('flashTimer'));
+		$button.data('flashTimer', setTimeout(function() {
+			$button.val(label);
+		}, 2000));
+	}
+
+
+	// ------------------------------------------------------------------
 	// Paste rows
 
 	// Open/close the paste panel
@@ -1151,7 +1357,7 @@ $(function() {
 			var values = [];
 
 			$cell.find('input[type=checkbox], input[type=radio]').each(function() {
-				var token = findToken(tokens, [this.value, $(this).closest('label').text()]);
+				var token = findToken(tokens, [this.value, optionLabel(this)]);
 
 				// A radio takes one option
 				if (token !== null && (this.type === 'checkbox' || ! found.length)) {
@@ -1245,8 +1451,17 @@ $(function() {
 		var props = $field.length ? reactProps($field, 'relationshipReact') : {};
 		var items = listItems(props.items);
 
-		// Titles can contain commas, so try the whole text as one title first
-		var tokens = findItem(items, text) ? [text] : splitList(text);
+		// One title per line (titles can contain commas); a line that isn't a title may be a list
+		var tokens = [];
+
+		$.each(String(text).split(/\s*\n\s*/), function(i, line) {
+			if (line === '') {
+				return;
+			}
+
+			tokens = findItem(items, line) ? tokens.concat([line]) : tokens.concat(splitList(line));
+		});
+
 		var entryIds = [];
 		var matched = true;
 

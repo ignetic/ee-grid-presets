@@ -2,6 +2,13 @@ Changelog for Grid Presets
 ===============================
 
 
+## 2.2.0
+
+- Copy rows: a Copy button copies the Grid's rows, with a headings row, as a table and tab separated text
+  - Pastes into Excel/Google Sheets (line breaks stay in their cells), or back into a Grid, where the headings map the columns by name
+  - Values are copied as readable text: option labels, "Yes"/"No" toggles, ticked options, relationship titles (one per line), rich text as plain text
+- Paste reads relationship titles one per line, so titles containing commas copy and paste correctly
+
 ## 2.1.0
 
 - Paste rows: a Paste button under each Grid takes a copied table (web page, Excel, Google Sheets) or tab/space separated text
