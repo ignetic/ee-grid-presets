@@ -2,6 +2,19 @@ Changelog for Grid Presets
 ===============================
 
 
+## 1.4.3
+
+- Fixed JS error in the control panel when the CP URL has no session ID (cookie-only sessions)
+- Updated Load, Delete and Save button styling for EE7
+
+## 1.4.2
+
+- PHP 8.2 Updates: declared extension $settings property (dynamic property deprecation)
+
+## 1.4.1
+
+- PHP 8.1 Fix: no longer passes empty module settings to unserialize()
+
 ## 1.4
 
 - Updated for EE7
@@ -22,6 +35,3 @@ Changelog for Grid Presets
 ## 1.0
 
 - Release version
-
-
-

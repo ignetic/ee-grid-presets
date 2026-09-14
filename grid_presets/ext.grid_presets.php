@@ -19,6 +19,7 @@ class Grid_presets_ext {
 	public $description    = GRID_PRESETS_DESCRIPTION;
 	public $docs_url       = GRID_PRESETS_DOCS_URL;
 	
+	public $settings = array();
 	public $settings_exist = 'n';
 
 

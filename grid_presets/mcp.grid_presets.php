@@ -104,7 +104,9 @@ class Grid_presets_mcp {
 				$query = ee()->db->select('settings')->where('module_name', $this->class)->get('modules');
 				foreach ($query->result_array() as $row)
 				{
-					$presets = unserialize($row['settings']);
+					if ($row['settings']) {
+						$presets = unserialize($row['settings']);
+					}
 				}
 		}
 		

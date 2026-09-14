@@ -31,7 +31,10 @@ $(document).ready(function(){
 		if (AJAX_BASE == '') {
 			AJAX_BASE = EE.BASE + "&C=addons_modules&M=show_module_cp&module=grid_presets&method=";
 		} else {
-			EE.SESSION = EE.BASE.match(/(S=[\w\d]+)/)[0];
+			var session = EE.BASE.match(/(S=[\w\d]+)/);
+			if (session) {
+				EE.SESSION = EE.BASE.match(/(S=[\w\d]+)/)[0];
+			}
 		}
 
 		// Pre EE 2.8 support
@@ -94,7 +97,7 @@ $(document).ready(function(){
 			if ( ! fieldId)
 				return true;
 
-			var presetButtons, buttonsHTML = '<div style="text-align:right; display:flex; align-items:flex-end; justify-content:flex-end; gap:5px; margin-bottom:-5px;" class="grid-presets" data-field-id="' + fieldId + '"><select class="grid-preset-select button--small" style="border-color:#cbcbda; text-align:left; padding-right:30px !important;"><option value="">- Select A Preset -</option></select> <input type="button" name="grid-preset-load" class="grid-preset-load btn button--small" value="Load"> <input type="button" name="grid-preset-delete" class="grid-preset-delete btn button--small remove" value="Delete"> <input type="button" name="grid-preset-save" class="grid-preset-save btn button--small action" value="Save"></div>';
+			var presetButtons, buttonsHTML = '<div style="text-align:right; display:flex; align-items:flex-end; justify-content:flex-end; gap:5px; margin-bottom:-5px;" class="grid-presets" data-field-id="' + fieldId + '"><select class="grid-preset-select button--small" style="border-color:#cbcbda; text-align:left; padding-right:30px !important;"><option value="">- Select A Preset -</option></select> <input type="button" name="grid-preset-load" class="grid-preset-load btn button--small button--secondary-alt" value="Load"> <input type="button" name="grid-preset-delete" class="grid-preset-delete btn button--small button--secondary-alt remove" value="Delete"> <input type="button" name="grid-preset-save" class="grid-preset-save btn button--small button--secondary-alt action" value="Save"></div>';
 
             if ($(this).find('.grid-field__footer').length > 0)	{
                 // EE6

@@ -1,6 +1,6 @@
 $(document).ready(function(){
 
-	// Saved Presets
+	// Saved Presets <= EE3
 	var presets = {};
 	
 	// grid fields in EE2 and EE3 as well as EE2 Henshu support
