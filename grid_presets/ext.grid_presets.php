@@ -1,24 +1,24 @@
 <?php if (! defined('APP_VER')) exit('No direct script access allowed');
 
 /**
- * ExpressionEngine Grid Presets Module Control Panel File
+ * ExpressionEngine Grid Presets Extension File
  *
  * @package		Grid Presets
  * @subpackage	Addons
- * @category	Module
+ * @category	Extension
  * @author		Simon Andersohn
- * @link		
+ * @link		https://github.com/ignetic/ee-grid-presets
  */
- 
+
 require_once PATH_THIRD.'grid_presets/config.php';
 
 class Grid_presets_ext {
 
 	public $name           = GRID_PRESETS_NAME;
-	public $version        = GRID_PRESETS_VERSION; 
+	public $version        = GRID_PRESETS_VERSION;
 	public $description    = GRID_PRESETS_DESCRIPTION;
 	public $docs_url       = GRID_PRESETS_DOCS_URL;
-	
+
 	public $settings = array();
 	public $settings_exist = 'n';
 
@@ -28,30 +28,17 @@ class Grid_presets_ext {
 	 */
 	public function __construct($settings = array())
 	{
-		
-		// --------------------------------------------
-		//  Settings!
-		// --------------------------------------------
-	
 		$this->settings = $settings;
-
 	}
 
 	// --------------------------------------------------------------------
 
-	
+
 	/**
 	 * Activate Extension
 	 */
 	public function activate_extension()
 	{
-		// Setup custom settings in this array.
-		$this->settings = array();
-	
-		// -------------------------------------------
-		//  Add the extension hooks
-		// -------------------------------------------
-
 		$hooks = array(
 			'cp_js_end',
 		);
@@ -62,26 +49,33 @@ class Grid_presets_ext {
 				'class'    => get_class($this),
 				'method'   => $hook,
 				'hook'     => $hook,
-				'settings' => serialize($this->settings),
+				'settings' => serialize(array()),
 				'priority' => 110,
 				'version'  => $this->version,
 				'enabled'  => 'y'
 			));
 		}
 	}
-	
-    public function settings()
-    {
-        return array();
-    }
+
+	public function settings()
+	{
+		return array();
+	}
 
 	/**
 	 * Update Extension
 	 */
 	public function update_extension($current = '')
 	{
-		// Nothing to change...
-		return FALSE;
+		if ($current == '' OR $current == $this->version)
+		{
+			return FALSE;
+		}
+
+		ee()->db->where('class', get_class($this))
+		             ->update('extensions', array('version' => $this->version));
+
+		return TRUE;
 	}
 
 	/**
@@ -89,12 +83,8 @@ class Grid_presets_ext {
 	 */
 	public function disable_extension()
 	{
-		// -------------------------------------------
-		//  Delete the extension hooks
-		// -------------------------------------------
-
 		ee()->db->where('class', get_class($this))
-		             ->delete('exp_extensions');
+		             ->delete('extensions');
 	}
 
 	// --------------------------------------------------------------------
@@ -102,41 +92,36 @@ class Grid_presets_ext {
 
 	/**
 	 * cp_js_end ext hook
+	 *
+	 * Runs for every CP page (as a separate JS request), so avoid DB queries here.
+	 * The script only does anything on the publish form.
 	 */
-	function cp_js_end()
+	public function cp_js_end()
 	{
-	
 		$output = '';
-	
+
 		if (ee()->extensions->last_call !== FALSE)
 		{
 			$output = ee()->extensions->last_call;
 		}
 
-		// This runs for every CP page (as a separate JS request), so avoid DB queries here.
-		// The Assets action ID is returned with the presets instead.
-		$vars['base'] = '';
+		// EE7+ only
+		if (version_compare(APP_VER, '7', '<'))
+		{
+			return $output;
+		}
 
-		if ( version_compare( APP_VER, '3', '>=' ) )
+		$vars = array('urls' => array());
+
+		foreach (array('get_presets', 'save_preset', 'delete_preset') as $method)
 		{
-			$vars['base'] = ee('CP/URL')->make('cp/addons/settings/grid_presets', array(), '', '') . '/'; 
+			$vars['urls'][$method] = ee('CP/URL')->make('addons/settings/grid_presets/'.$method)->compile();
 		}
-		
-		if ( version_compare( APP_VER, '4', '>=' ) )
-		{
-			$output .= ee()->load->view('grid_presets.js', $vars, TRUE);
-		}
-		else 
-		{
-			$output .= ee()->load->view('grid_presets_ee3.js', $vars, TRUE);
-		}
-	
+
+		$output .= ee()->load->view('grid_presets.js', $vars, TRUE);
+
 		return $output;
-
 	}
 
-	
-	
 }
 /* End of file ext.grid_presets.php */
-/* Location: /system/expressionengine/third_party/grid_presets/ext.grid_presets.php */

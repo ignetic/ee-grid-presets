@@ -7,227 +7,239 @@
  * @subpackage	Addons
  * @category	Module
  * @author		Simon Andersohn
- * @link		
+ * @link		https://github.com/ignetic/ee-grid-presets
  */
- 
+
 require_once PATH_THIRD.'grid_presets/config.php';
 
 class Grid_presets_mcp {
-	
-	public $name = GRID_PRESETS_NAME;
-	public $version = GRID_PRESETS_VERSION; 
-	
-	public $return_data;
 
-	private $class = 'Grid_presets';
+	public $name = GRID_PRESETS_NAME;
+	public $version = GRID_PRESETS_VERSION;
+
 	private $settings_table = 'grid_presets_settings';
 	private $site_id = 1;
-	private $csrf_token;
-	
+
+	// Field types that presets can be saved for
+	private $grid_fieldtypes = array('grid', 'file_grid');
+
 
 	/**
 	 * Constructor
 	 */
 	public function __construct()
 	{
-		$this->site_id = ee()->config->item('site_id');
-		
-		if(defined('CSRF_TOKEN'))
-		{
-			$this->csrf_token = CSRF_TOKEN;
-		}
-		else
-		{
-			$this->csrf_token = ee()->security->restore_xid();
-		} 
-		
+		$this->site_id = (int) ee()->config->item('site_id');
 	}
-	
+
 	// ----------------------------------------------------------------
 
 	/**
 	 * Index Function
 	 *
-	 * @return 	void
+	 * @return 	string
 	 */
 	public function index()
 	{
-		// If this isn't an AJAX request, just display the "base" settings form.
-		if ( ! ee()->input->is_ajax_request())
-		{
-			if ( version_compare( APP_VER, '2.6.0', '<' ) )
-			{
-				ee()->cp->set_variable( 'cp_page_title', lang('grid_presets_module_name') );
-			}
-			else
-			{
-				ee()->view->cp_page_title = lang('grid_presets_module_name');
-			}
-			
-			return "Nothing to see here...";
-		}
+		ee()->view->cp_page_title = lang('grid_presets_module_name');
 
+		return lang('grid_presets_index_note');
 	}
 
-	
+
 	/**
-	 * Get presets
+	 * Get presets for the posted field IDs (AJAX)
 	 */
-	 
-	public function get_presets($field_ids=array(), $ajax=TRUE)
+	public function get_presets()
 	{
-		
-		$presets = array();
+		ee()->output->send_ajax_response(array(
+			'presets'       => $this->fetch_presets($this->posted_field_ids()),
+			'assets_act_id' => $this->get_assets_act_id(),
+		));
+	}
 
-		if (ee()->input->post('field_ids') !== FALSE)
-		{
-			$field_ids = ee()->input->post('field_ids');
-			
-		}
-		if (is_array($field_ids) && !empty($field_ids))
-		{
-			ee()->db->where_in('field_id', $field_ids);
-		}
 
-		$query = ee()->db->where('site_id', $this->site_id)->get($this->settings_table);
-		
-		if ($query->num_rows() > 0)
-		{
-			foreach ($query->result_array() as $row)
-			{
-				$preset_values = $this->unserialize_values($row['preset_values']);
+	/**
+	 * Save a new preset, or overwrite an existing one (AJAX)
+	 *
+	 * POST: field_id, preset_id (empty/0 for new), name, values (JSON), field_ids
+	 */
+	public function save_preset()
+	{
+		$field_id  = (int) ee()->input->post('field_id');
+		$preset_id = (int) ee()->input->post('preset_id');
+		$name      = trim((string) ee()->input->post('name'));
+		$values    = json_decode((string) ee()->input->post('values'), TRUE);
 
-				// Skip corrupt/truncated presets
-				if ($preset_values !== FALSE)
-				{
-					$presets[$row['field_id']][$row['preset_id']] = $preset_values;
-				}
-			}
-		}
-		elseif (ee()->db->field_exists('settings', 'modules'))
+		if ( ! $this->is_grid_field($field_id) || $name === '' || ! is_array($values))
 		{
-				// Try old settings
-				$query = ee()->db->select('settings')->where('module_name', $this->class)->get('modules');
-				foreach ($query->result_array() as $row)
-				{
-					$settings = $this->unserialize_values($row['settings']);
-					if ($settings !== FALSE) {
-						$presets = $settings;
-					}
-				}
+			ee()->output->send_ajax_response(array('error' => 'Invalid preset.'), TRUE);
 		}
 
-		if ($ajax === TRUE)
+		$preset = array(
+			'name'   => mb_substr($name, 0, 255),
+			'values' => $values,
+		);
+
+		// Relationship entry titles, for showing loaded entries: {entry_id: title}
+		$labels = json_decode((string) ee()->input->post('labels'), TRUE);
+
+		if (is_array($labels) && ! empty($labels))
 		{
-			ee()->output->send_ajax_response(array('presets' => $presets, 'assets_act_id' => $this->get_assets_act_id(), 'CSRF_TOKEN' => $this->csrf_token));
+			$preset['labels'] = array_map('strval', array_filter($labels, 'is_scalar'));
+		}
+
+		$preset_values = json_encode($preset, JSON_INVALID_UTF8_SUBSTITUTE);
+
+		if ($preset_values === FALSE)
+		{
+			ee()->output->send_ajax_response(array('error' => 'The preset could not be encoded.'), TRUE);
+		}
+
+		$where = array(
+			'site_id'  => $this->site_id,
+			'field_id' => $field_id,
+		);
+
+		// New preset: next ID (preset_id is a varchar, so cast for a numeric max; as text, '9' sorts after '10')
+		if ( ! $preset_id)
+		{
+			$row = ee()->db->select('MAX(CAST(preset_id AS UNSIGNED)) AS max_id', FALSE)
+				->where($where)
+				->get($this->settings_table)
+				->row_array();
+
+			$preset_id = (int) ($row['max_id'] ?? 0) + 1;
+		}
+
+		$where['preset_id'] = $preset_id;
+
+		// serialized: 1 = PHP serialized (pre 2.0), 0 = JSON
+		$data = array(
+			'preset_values' => $preset_values,
+			'serialized'    => 0,
+		);
+
+		if (ee()->db->where($where)->count_all_results($this->settings_table) > 0)
+		{
+			ee()->db->update($this->settings_table, $data, $where);
 		}
 		else
 		{
-			return $presets;
+			ee()->db->insert($this->settings_table, array_merge($where, $data));
 		}
-	}	
 
-	
-	/**
-	 * Save presets
-	 */
-	
-	public function save_preset()
-	{
-	
-		$field_ids = array();
-		
-		if (ee()->input->post('field_ids') !== FALSE)
-		{
-			$field_ids = ee()->input->post('field_ids');
-		}
-		
-		if(ee()->input->post('preset')) 
-		{
-			$preset = ee()->input->post('preset');
-			$newpreset = ee()->input->post('newpreset');
-			
-			foreach($preset as $field_id => $val)
-			{
-				$fields = array();
-				$fields['site_id'] = $this->site_id;
-				$fields['field_id'] = $field_id;
-				$fields['serialized'] = 1;
-				
-				foreach($val as $preset_id => $preset_values)
-				{
-	
-					// is this a new preset?... get highest key
-					if ($newpreset == 'true' && $preset_id == 0){
-						// preset_id is a varchar, so cast for a numeric max (as text, '9' sorts after '10')
-						$query = ee()->db->select('MAX(CAST(preset_id AS UNSIGNED)) AS preset_id', FALSE)->from($this->settings_table)->where($fields)->get();
-						if ($query->num_rows() > 0)
-						{
-							foreach ($query->result_array() as $row)
-							{
-								$preset_id = (int) $row['preset_id'];
-							}
-						}
-						$preset_id++;
-					}
-
-					$fields['preset_id'] = $preset_id;
-				
-					ee()->db->from($this->settings_table);
-					ee()->db->where($fields);
-					if (ee()->db->count_all_results() == 0) 
-					{
-						
-						$fields['preset_values'] = serialize($preset_values);
-						$query = ee()->db->insert($this->settings_table, $fields);
-					
-					}
-					else
-					{
-						$query = ee()->db->update($this->settings_table, array('preset_values' => serialize($preset_values)), $fields);
-					}
-					
-				}
-			}
-			
-		}
-		
-		ee()->output->send_ajax_response(array('presets' => $this->get_presets($field_ids, TRUE), 'CSRF_TOKEN' => $this->csrf_token));
-		
+		ee()->output->send_ajax_response(array(
+			'presets'   => $this->fetch_presets($this->posted_field_ids()),
+			'preset_id' => $preset_id,
+		));
 	}
-	
-	
+
+
 	/**
-	 * Delete presets
+	 * Delete a preset (AJAX)
+	 *
+	 * POST: field_id, preset_id, field_ids
 	 */
-	
 	public function delete_preset()
 	{
-		// Get existing presets
-		$field_ids = array();
-		
-		if (ee()->input->post('field_ids') !== FALSE)
-		{
-			$field_ids = ee()->input->post('field_ids');
-		}		
-		
-		// Delete
-		$presets = array();
-		$field_id = ee()->input->post('field_id');
-		$preset_id = ee()->input->post('preset_id');
-		
+		$field_id  = (int) ee()->input->post('field_id');
+		$preset_id = (int) ee()->input->post('preset_id');
+
 		if ($field_id && $preset_id)
 		{
-			ee()->db->delete($this->settings_table, array('site_id' => $this->site_id, 'field_id' => $field_id, 'preset_id' => $preset_id)); 
-			
+			ee()->db->delete($this->settings_table, array(
+				'site_id'   => $this->site_id,
+				'field_id'  => $field_id,
+				'preset_id' => $preset_id,
+			));
 		}
-		
-		ee()->output->send_ajax_response(array('presets' => $this->get_presets($field_ids, TRUE), 'CSRF_TOKEN' => $this->csrf_token));
+
+		ee()->output->send_ajax_response(array(
+			'presets' => $this->fetch_presets($this->posted_field_ids()),
+		));
 	}
 
 
 	/**
-	 * Unserialize stored preset data (arrays only, never objects)
+	 * Presets for these fields, as [field_id][preset_id] => array('name' => ..., 'values' => ...)
+	 *
+	 * @return array
+	 */
+	private function fetch_presets($field_ids)
+	{
+		$presets = array();
+
+		// Never return every preset on the site
+		if (empty($field_ids))
+		{
+			return $presets;
+		}
+
+		$query = ee()->db->where('site_id', $this->site_id)
+			->where_in('field_id', $field_ids)
+			->get($this->settings_table);
+
+		foreach ($query->result_array() as $row)
+		{
+			$preset = $row['serialized']
+				? $this->unserialize_values($row['preset_values'])
+				: json_decode((string) $row['preset_values'], TRUE);
+
+			// Skip corrupt/truncated presets
+			if (is_array($preset) && isset($preset['values']))
+			{
+				$presets[$row['field_id']][$row['preset_id']] = $preset;
+			}
+		}
+
+		foreach ($presets as &$field_presets)
+		{
+			ksort($field_presets, SORT_NUMERIC);
+		}
+
+		return $presets;
+	}
+
+
+	/**
+	 * Posted field IDs (integers only)
+	 *
+	 * @return array
+	 */
+	private function posted_field_ids()
+	{
+		$field_ids = ee()->input->post('field_ids');
+
+		if ( ! is_array($field_ids))
+		{
+			return array();
+		}
+
+		return array_values(array_unique(array_filter(array_map('intval', $field_ids))));
+	}
+
+
+	/**
+	 * Is this a Grid or File Grid field?
+	 *
+	 * @return bool
+	 */
+	private function is_grid_field($field_id)
+	{
+		if ($field_id < 1)
+		{
+			return FALSE;
+		}
+
+		return ee()->db->where('field_id', $field_id)
+			->where_in('field_type', $this->grid_fieldtypes)
+			->count_all_results('channel_fields') > 0;
+	}
+
+
+	/**
+	 * Unserialize pre-2.0 preset data (arrays only, never objects)
 	 *
 	 * @return array|bool FALSE if empty or invalid
 	 */
@@ -266,4 +278,3 @@ class Grid_presets_mcp {
 
 }
 /* End of file mcp.grid_presets.php */
-

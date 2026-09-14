@@ -2,6 +2,26 @@ Changelog for Grid Presets
 ===============================
 
 
+## 2.0.0
+
+Requires ExpressionEngine 7. Use 1.4.4 for EE2-EE6.
+Run the add-on update in the CP (Add-ons) to convert existing presets.
+
+- Grid and File Grid fields inside Fluid fields, including ones added after the page loads
+- Each copy of a Grid on the page gets its own preset buttons (e.g. the same Grid repeated in a Fluid field)
+- Presets are saved as JSON in a larger (MEDIUMTEXT) column: no more PHP max_input_vars or 64 KB limits
+- Existing presets are converted to JSON by the update
+- Saving checks the field is a Grid or File Grid field
+- Members without access to the add-on no longer get errors (the buttons are just not shown)
+- Relationships load properly (EE7's React field is re-rendered with the entries selected, showing titles and staying editable); previously they saved empty on EE7
+- Rich Text (RedactorX, Redactor, CKEditor) content loads into the editor, including deferred editors
+- MX Select Plus (Chosen) and EE's React dropdowns show the loaded values; missing select options are added, for multi-selects too
+- Channel Images Select widgets are rebuilt with the loaded images (thumbnails need Channel Images Select 1.4.2+)
+- Loading no longer triggers a burst of EE form validation requests (validation is paused while rows are filled)
+- Save selects the new preset, and asks for rows when the Grid is empty
+- Ready for jQuery 4 (no positional selectors)
+- Removed: EE2-EE6 support, the EE3 script, and the pre-1.2 settings migration (update to 1.4.4 first to keep presets from 1.1 or earlier)
+
 ## 1.4.4
 
 - Fixed loading older presets saved by column position (rows were added but left empty)
